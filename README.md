@@ -42,3 +42,23 @@ d'exemples (utile avant de montrer le projet à quelqu'un) :
 https://claude.ai/code/artifact/96721c70-fead-4f7d-a1b7-e257202d277b
 
 C'est ce lien qu'on partage. Le fichier local sert à bricoler.
+
+## Installation sur téléphone
+
+L'application est une PWA : elle s'installe sur l'écran d'accueil sans
+passer par l'App Store ni le Play Store.
+
+  iPhone / iPad   Ouvrir le lien dans Safari (pas Chrome), bouton Partager,
+                  « Sur l'écran d'accueil »
+  Android         Ouvrir dans Chrome, menu ..., « Installer l'application »
+
+Une fois installée, elle s'ouvre en plein écran, sans barre de navigateur,
+et fonctionne hors ligne.
+
+## Structure des fichiers
+
+  index.html              l'application entière (source de référence)
+  manifest.webmanifest    nom, icônes et couleurs de l'app installée
+  sw.js                   service worker : hors ligne + installation
+  icones/                 icônes 192, 512 et Apple
+  .nojekyll               désactive Jekyll sur GitHub Pages

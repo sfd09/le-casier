@@ -4,6 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
+<!-- Application installable (PWA) -->
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icones/icone-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./icones/apple-touch-icon.png">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F4F5F8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0E1421">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Le Casier">
+<meta name="description" content="Dons, trocs et ventes de manuels et de fournitures entre élèves du lycée.">
+
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; }
@@ -1277,6 +1289,16 @@ label .opt{font-weight:400;color:var(--faint)}
     }, function () {});
   }).catch(function () { state.dbEssaye = true; replier(); });
 })();
+</script>
+
+<script>
+  // Enregistre le service worker : rend l'application installable et
+  // utilisable hors ligne. Sans lui, la page fonctionne normalement.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("./sw.js").catch(function () {});
+    });
+  }
 </script>
 </body>
 </html>
