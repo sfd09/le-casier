@@ -62,3 +62,32 @@ et fonctionne hors ligne.
   sw.js                   service worker : hors ligne + installation
   icones/                 icônes 192, 512 et Apple
   .nojekyll               désactive Jekyll sur GitHub Pages
+
+## Base de données (Supabase)
+
+Le catalogue est partagé : hébergé sur Supabase, région Europe.
+
+  supabase/schema.sql   tables, sécurité et opérations — à coller dans
+                        l'éditeur SQL de Supabase pour recréer la base
+
+Principe : les tables sont en LECTURE SEULE pour les élèves. Toute
+modification passe par une des fonctions SQL du schéma, qui s'exécutent
+en une seule transaction. C'est ce qui garantit qu'un crédit ne peut être
+ni créé ni perdu quand deux élèves agissent en même temps.
+
+L'identification est anonyme : chaque appareil reçoit un identifiant
+stable, sans e-mail ni mot de passe.
+
+La clé `anon` présente dans index.html est publique par conception : ce
+sont les règles du schéma qui protègent les données, pas le secret de
+cette clé. La clé `service_role`, elle, ne doit JAMAIS figurer dans ce
+dépôt.
+
+### Repartir de zéro pour une démonstration
+
+Dans la console du navigateur :
+
+    localStorage.clear(); location.reload()
+
+Vous obtenez une nouvelle identité anonyme et l'application redemande un
+pseudo. Le catalogue, lui, reste partagé : c'est le principe.
