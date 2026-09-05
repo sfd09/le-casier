@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+</style>
+<title>Le Casier du lycée</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Public+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+:root{
+  --paper:#F4F5F8;
+  --surface:#FFFFFF;
+  --surface-2:#EDEFF4;
+  --ink:#151D31;
+  --muted:#5D6883;
+  --faint:#8B94A8;
+  --line:#DDE2EB;
+  --line-strong:#C3CBDA;
+  --accent:#2F5FE0;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E4EAFC;
+  --ok:#17784E;
+  --ok-soft:#DCF0E6;
+  --warn:#9C6407;
+  --warn-soft:#FBEED4;
+  --done:#6C768C;
+  --done-soft:#E5E8EF;
+  --alert:#A32B33;
+  --alert-soft:#F8E1E2;
+
+  --c-manuel:#2F5FE0;
+  --c-lecture:#B23A48;
+  --c-calc:#7145B8;
+  --c-materiel:#0C6F7C;
+  --c-fournitures:#8A6A1C;
+  --c-sport:#1B7A4F;
+  --c-autre:#6C768C;
+
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --r:10px;
+  --shadow:0 1px 2px rgba(21,29,49,.05);
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0E1421;
+    --surface:#161E2E;
+    --surface-2:#1E283B;
+    --ink:#E8ECF4;
+    --muted:#A3ADC2;
+    --faint:#7C879E;
+    --line:#28334A;
+    --line-strong:#3A4761;
+    --accent:#7C9BF5;
+    --accent-ink:#0E1421;
+    --accent-soft:#1E2A4A;
+    --ok:#5FCB97;
+    --ok-soft:#123326;
+    --warn:#E5B45F;
+    --warn-soft:#33270D;
+    --done:#8B94A8;
+    --done-soft:#222C3F;
+    --alert:#F08A90;
+    --alert-soft:#3A1B1E;
+
+    --c-manuel:#7C9BF5;
+    --c-lecture:#E8848F;
+    --c-calc:#B394EE;
+    --c-materiel:#4FBDCB;
+    --c-fournitures:#D6B45C;
+    --c-sport:#5FCB97;
+    --c-autre:#8B94A8;
+
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+  }
+}
+
+:root[data-theme="dark"]{
+  --paper:#0E1421;
+  --surface:#161E2E;
+  --surface-2:#1E283B;
+  --ink:#E8ECF4;
+  --muted:#A3ADC2;
+  --faint:#7C879E;
+  --line:#28334A;
+  --line-strong:#3A4761;
+  --accent:#7C9BF5;
+  --accent-ink:#0E1421;
+  --accent-soft:#1E2A4A;
+  --ok:#5FCB97;
+  --ok-soft:#123326;
+  --warn:#E5B45F;
+  --warn-soft:#33270D;
+  --done:#8B94A8;
+  --done-soft:#222C3F;
+  --alert:#F08A90;
+  --alert-soft:#3A1B1E;
+
+  --c-manuel:#7C9BF5;
+  --c-lecture:#E8848F;
+  --c-calc:#B394EE;
+  --c-materiel:#4FBDCB;
+  --c-fournitures:#D6B45C;
+  --c-sport:#5FCB97;
+  --c-autre:#8B94A8;
+
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  font-size:15px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px 72px}
+
+/* ---------- barre haute ---------- */
+.topbar{
+  position:sticky;top:0;z-index:40;
+  background:color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.topbar-inner{
+  max-width:1080px;margin:0 auto;padding:12px 16px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+}
+.mark{
+  display:flex;align-items:baseline;gap:9px;margin-right:auto;
+  font-family:"Fraunces","Iowan Old Style",Georgia,serif;
+  font-weight:600;font-size:21px;letter-spacing:-.01em;
+}
+.mark .dot{
+  width:9px;height:9px;border-radius:2px;background:var(--accent);
+  align-self:center;flex:none;
+}
+.mark small{
+  font-family:"Public Sans",sans-serif;font-weight:500;font-size:11px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--faint);
+}
+
+.balance{
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:5px 6px 5px 13px;box-shadow:var(--shadow);
+}
+.balance .who{display:flex;flex-direction:column;line-height:1.15;margin-right:2px}
+.balance .who b{font-size:13px;font-weight:600}
+.balance .who span{font-size:11px;color:var(--faint)}
+.credits{
+  display:flex;align-items:baseline;gap:4px;
+  background:var(--accent);color:var(--accent-ink);
+  border-radius:999px;padding:5px 11px;
+}
+.credits b{font-family:var(--mono);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+.credits span{font-size:10px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
+.dons{
+  display:flex;align-items:baseline;gap:4px;
+  background:var(--ok-soft);color:var(--ok);
+  border-radius:999px;padding:5px 10px;
+}
+.dons b{font-family:var(--mono);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.dons span{font-size:10px;letter-spacing:.06em;text-transform:uppercase}
+
+/* ---------- onglets ---------- */
+.tabs{display:flex;gap:2px;overflow-x:auto;padding:10px 0 0;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  flex:none;appearance:none;background:none;border:0;cursor:pointer;
+  font:inherit;font-weight:500;color:var(--muted);
+  padding:8px 13px 11px;border-bottom:2px solid transparent;
+  border-radius:6px 6px 0 0;white-space:nowrap;
+}
+.tab:hover{color:var(--ink);background:var(--surface-2)}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.tab .n{
+  font-family:var(--mono);font-size:11px;color:var(--faint);
+  margin-left:5px;font-variant-numeric:tabular-nums;
+}
+
+/* ---------- filtres ---------- */
+.filters{padding:22px 0 6px;display:flex;flex-direction:column;gap:11px}
+.search{display:flex;gap:8px;flex-wrap:wrap}
+.search input[type="search"]{flex:1 1 220px}
+
+input,select,textarea{
+  font:inherit;color:var(--ink);background:var(--surface);
+  border:1px solid var(--line-strong);border-radius:8px;
+  padding:9px 11px;width:100%;
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible,
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+textarea{resize:vertical;min-height:64px}
+label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px}
+label .opt{font-weight:400;color:var(--faint)}
+
+.seg{
+  display:inline-flex;background:var(--surface-2);border-radius:9px;
+  padding:3px;gap:2px;align-self:flex-start;max-width:100%;overflow-x:auto;
+  scrollbar-width:none;
+}
+.seg::-webkit-scrollbar{display:none}
+.seg button{
+  appearance:none;border:0;cursor:pointer;font:inherit;font-size:13px;font-weight:600;
+  background:none;color:var(--muted);padding:6px 14px;border-radius:7px;white-space:nowrap;
+}
+.seg button:hover{color:var(--ink)}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+
+.chiprail{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  appearance:none;cursor:pointer;font:inherit;font-size:13px;font-weight:500;
+  background:var(--surface);color:var(--muted);
+  border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 9px;
+  display:inline-flex;align-items:center;gap:7px;
+}
+.chip:hover{border-color:var(--line-strong);color:var(--ink)}
+.chip .swatch{width:9px;height:9px;border-radius:2px;background:var(--sw,var(--c-autre));flex:none}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* ---------- grille ---------- */
+.count{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:16px 0 10px;border-bottom:1px solid var(--line);margin-bottom:16px;
+}
+.count b{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
+.count .lbl{font-size:13px;color:var(--muted)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
+
+.obj{
+  position:relative;display:flex;flex-direction:column;gap:8px;
+  background:var(--surface);border:1px solid var(--line);
+  border-left:4px solid var(--sw,var(--c-autre));
+  border-radius:var(--r);padding:13px 14px 12px;
+}
+.obj.gone{opacity:.62}
+.obj-head{display:flex;gap:8px;align-items:flex-start}
+.obj h3{
+  margin:0;font-family:"Fraunces","Iowan Old Style",Georgia,serif;
+  font-size:17px;font-weight:600;line-height:1.25;letter-spacing:-.01em;
+  text-wrap:balance;flex:1;
+}
+.obj .auteur{margin:-3px 0 0;color:var(--muted);font-size:13px}
+.obj .note{font-size:13px;color:var(--muted);margin:0}
+.obj .isbn{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+.mode{
+  display:inline-flex;align-items:baseline;gap:6px;align-self:flex-start;
+  border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600;
+}
+.mode.don{background:var(--ok-soft);color:var(--ok)}
+.mode.troc{background:var(--accent-soft);color:var(--accent)}
+.mode.vente{
+  background:var(--surface-2);color:var(--ink);
+  border:1px solid var(--line-strong);
+}
+.mode.vente b{
+  font-family:var(--mono);font-size:15px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.mode.vente span{font-weight:500;color:var(--muted);font-size:11px}
+
+.meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:auto;padding-top:3px}
+.tag{
+  font-size:11px;font-weight:500;padding:2px 8px;border-radius:5px;
+  background:var(--surface-2);color:var(--muted);white-space:nowrap;
+}
+.tag.cat{color:var(--sw);background:color-mix(in srgb,var(--sw) 12%,transparent)}
+.pill{
+  font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;
+  padding:3px 8px;border-radius:999px;white-space:nowrap;flex:none;
+}
+.pill.dispo{background:var(--ok-soft);color:var(--ok)}
+.pill.reserve{background:var(--warn-soft);color:var(--warn)}
+.pill.echange{background:var(--done-soft);color:var(--done)}
+.pill.signale{background:var(--alert-soft);color:var(--alert)}
+
+.owner{
+  font-size:12px;color:var(--faint);display:flex;flex-wrap:wrap;gap:4px;
+  border-top:1px solid var(--line);padding-top:9px;margin-top:2px;
+}
+.owner b{color:var(--muted);font-weight:600}
+.contact{
+  background:var(--warn-soft);color:var(--warn);border-radius:7px;
+  padding:8px 11px;font-size:12px;font-weight:500;
+}
+.contact b{font-weight:700}
+.obj-actions{display:flex;gap:7px;align-items:center}
+.obj-actions .btn{flex:1}
+
+/* ---------- boutons ---------- */
+.btn{
+  appearance:none;cursor:pointer;font:inherit;font-size:13px;font-weight:600;
+  border-radius:8px;padding:8px 13px;border:1px solid transparent;
+  background:var(--surface-2);color:var(--ink);
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.btn:hover{background:var(--line)}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.give{background:var(--ok);color:#fff}
+.btn.give:hover{filter:brightness(1.08)}
+.btn.ghost{background:none;border-color:var(--line-strong);color:var(--muted)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--ink)}
+.btn.icon{padding:8px 10px;flex:none;background:none;color:var(--faint);border-color:var(--line)}
+.btn.icon:hover{color:var(--alert);border-color:var(--alert)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.btn[disabled]:hover{filter:none;background:var(--surface-2)}
+
+/* ---------- panneaux ---------- */
+.panel{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r);padding:20px;box-shadow:var(--shadow);
+}
+.panel + .panel{margin-top:12px}
+.panel h2{
+  margin:0 0 4px;font-family:"Fraunces",Georgia,serif;
+  font-size:20px;font-weight:600;letter-spacing:-.01em;
+}
+.panel .sub{margin:0 0 18px;color:var(--muted);font-size:14px;max-width:62ch}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+.form-grid .full{grid-column:1/-1}
+.form-foot{
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
+}
+.form-foot p{margin:0;font-size:13px;color:var(--muted);flex:1;min-width:200px}
+
+.modepick{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:9px}
+.modepick button{
+  appearance:none;cursor:pointer;font:inherit;text-align:left;
+  background:var(--surface);border:1px solid var(--line-strong);
+  border-radius:9px;padding:12px 13px;color:var(--ink);
+  display:flex;flex-direction:column;gap:2px;
+}
+.modepick button:hover{border-color:var(--muted)}
+.modepick button[aria-pressed="true"]{
+  border-color:var(--accent);background:var(--accent-soft);
+  box-shadow:inset 0 0 0 1px var(--accent);
+}
+.modepick b{font-size:14px;font-weight:600}
+.modepick span{font-size:12px;color:var(--muted);line-height:1.35}
+
+.notice{
+  background:var(--warn-soft);color:var(--warn);border-radius:8px;
+  padding:11px 14px;font-size:13px;margin:14px 0 0;
+}
+.notice b{font-weight:700}
+
+.empty{
+  text-align:center;padding:44px 20px;color:var(--muted);
+  border:1px dashed var(--line-strong);border-radius:var(--r);
+}
+.empty p{margin:0 0 14px}
+
+.section-title{
+  font-family:"Fraunces",Georgia,serif;font-size:17px;font-weight:600;
+  margin:26px 0 12px;display:flex;align-items:baseline;gap:9px;
+}
+.section-title span{
+  font-family:var(--mono);font-size:11px;color:var(--faint);
+  font-weight:400;font-variant-numeric:tabular-nums;
+}
+
+/* ---------- première visite ---------- */
+.onboard{
+  border:1px solid var(--accent);background:var(--accent-soft);
+  border-radius:var(--r);padding:20px;margin:22px 0 0;
+}
+.onboard h2{margin:0 0 4px;font-family:"Fraunces",Georgia,serif;font-size:19px;font-weight:600}
+.onboard p{margin:0 0 16px;color:var(--muted);font-size:14px;max-width:56ch}
+.onboard .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.onboard .row > div{flex:1 1 150px}
+.onboard label{color:var(--muted)}
+
+/* ---------- le projet ---------- */
+.prose{max-width:66ch}
+.prose h3{font-family:"Fraunces",Georgia,serif;font-size:16px;font-weight:600;margin:22px 0 7px}
+.prose h3:first-child{margin-top:0}
+.prose p{margin:0 0 11px;color:var(--muted)}
+.prose ul{margin:0 0 11px;padding-left:19px;color:var(--muted)}
+.prose li{margin-bottom:5px}
+.prose strong{color:var(--ink);font-weight:600}
+
+.circuits{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:0 0 16px}
+.circuit{
+  border:1px solid var(--line);border-top:3px solid var(--sw);
+  border-radius:9px;padding:14px 15px;background:var(--surface);
+}
+.circuit b{display:block;font-size:15px;font-weight:600;margin-bottom:6px}
+.circuit p{margin:0 0 8px;font-size:13px;color:var(--muted)}
+.circuit .flux{
+  font-family:var(--mono);font-size:12px;
+  color:var(--sw);font-weight:500;
+}
+
+.steps{list-style:none;margin:0;padding:0;counter-reset:s}
+.steps li{
+  counter-increment:s;position:relative;padding:0 0 16px 34px;
+  border-left:1px solid var(--line);margin-left:11px;
+}
+.steps li:last-child{border-left-color:transparent;padding-bottom:0}
+.steps li::before{
+  content:counter(s);position:absolute;left:-11px;top:0;
+  width:22px;height:22px;border-radius:50%;
+  background:var(--surface);border:1px solid var(--line-strong);
+  color:var(--muted);font-family:var(--mono);font-size:11px;
+  display:flex;align-items:center;justify-content:center;
+}
+.steps li b{display:block;font-size:14px;margin-bottom:2px}
+.steps li p{margin:0;font-size:13px;color:var(--muted)}
+
+.legend{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:14px}
+.legend div{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.legend i{width:9px;height:9px;border-radius:2px;background:var(--sw);flex:none}
+
+/* ---------- toast ---------- */
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  background:var(--ink);color:var(--paper);
+  padding:10px 18px;border-radius:999px;font-size:13px;font-weight:500;
+  box-shadow:0 6px 22px rgba(21,29,49,.22);z-index:80;
+  max-width:calc(100vw - 32px);text-align:center;
+}
+.toast[hidden]{display:none!important}
+
+.status-line{font-size:12px;color:var(--faint);padding:14px 0 0;text-align:center}
+.status-line b{color:var(--muted);font-weight:600}
+
+@media (prefers-reduced-motion:no-preference){
+  .toast{animation:rise .22s ease-out}
+  @keyframes rise{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
+}
+
+@media (max-width:560px){
+  .grid{grid-template-columns:1fr 1fr;gap:9px}
+  .obj{padding:11px 12px}
+  .obj h3{font-size:15px}
+  .mark{font-size:19px}
+  .mark small{display:none}
+  .panel{padding:16px}
+  .balance .who{display:none}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="mark"><span class="dot"></span>Le Casier <small>Lycée</small></div>
+    <div class="balance" id="balance"></div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <div id="onboard"></div>
+  <main id="view"></main>
+  <p class="status-line" id="status"></p>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- référentiel ---------------- */
+
+  var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
+
+  var CATEGORIES = [
+    { id: "manuel",      nom: "Manuel scolaire" },
+    { id: "lecture",     nom: "Lecture, roman" },
+    { id: "calc",        nom: "Calculatrice" },
+    { id: "materiel",    nom: "Matériel" },
+    { id: "fournitures", nom: "Fournitures" },
+    { id: "sport",       nom: "Sport, EPS" },
+    { id: "autre",       nom: "Autre" }
+  ];
+  var MATIERES = ["Français", "Mathématiques", "Histoire-Géo", "SVT", "Physique-Chimie",
+                  "SES", "Langues", "Philosophie", "NSI"];
+  var NIVEAUX = ["Seconde", "Première", "Terminale", "Prépa"];
+  var ETATS   = ["Comme neuf", "Bon état", "Correct", "Usé mais fonctionnel"];
+
+  var MODES = {
+    don:   { nom: "Don",   court: "Don",   couleur: "var(--ok)" },
+    troc:  { nom: "Troc",  court: "Troc",  couleur: "var(--accent)" },
+    vente: { nom: "Vente", court: "Vente", couleur: "var(--c-fournitures)" }
+  };
+
+  function catNom(id) {
+    for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].id === id) return CATEGORIES[i].nom;
+    return "Autre";
+  }
+  function sw(id) {
+    for (var i = 0; i < CATEGORIES.length; i++) if (CATEGORIES[i].id === id) return "var(--c-" + id + ")";
+    return "var(--c-autre)";
+  }
+  function prixFmt(p) {
+    var n = Number(p) || 0;
+    return (Math.round(n * 100) / 100).toString().replace(".", ",") + " €";
+  }
+
+  /* ---------------- état ---------------- */
+
+  var state = {
+    me: null,
+    objets: [],
+    membres: {},
+    onglet: "catalogue",
+    filtre: { q: "", mode: "", cat: "", niveau: "" },
+    depotMode: "don",
+    db: null,
+    dbEssaye: false
+  };
+
+  var LOCAL_KEY = "casier.moi.v2";
+  var BIB_KEY = "casier.bibliotheque.v2";
+
+  function slug(s) {
+    return (s || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "").slice(0, 40) || "eleve";
+  }
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function lire() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "null"); } catch (e) { return null; } }
+  function ecrire(v) { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(v)); } catch (e) {} }
+  function lireBib() {
+    try {
+      var b = JSON.parse(localStorage.getItem(BIB_KEY) || "null");
+      if (b && Array.isArray(b.objets) && b.membres) return b;
+    } catch (e) {}
+    return null;
+  }
+  function sauverBib() {
+    if (state.db) return;
+    try { localStorage.setItem(BIB_KEY, JSON.stringify({ objets: state.objets, membres: state.membres })); }
+    catch (e) {}
+  }
+
+  var toastT = null;
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastT);
+    toastT = setTimeout(function () { el.hidden = true; }, 3200);
+  }
+
+  /* ---------------- exemples ---------------- */
+
+  var EXEMPLES = [
+    { id: "x01", titre: "Maths Terminale spécialité", auteur: "Barbazo — Hachette", cat: "manuel", matiere: "Mathématiques", niveau: "Terminale", etat: "Correct", mode: "troc", statut: "dispo", proprietaire: "Ismaël", proprietaireCle: "ismael", classe: "Term S1", note: "Édition 2023, couverture un peu pliée mais tout est là.", isbn: "9782017866237" },
+    { id: "x02", titre: "Calculatrice NumWorks", auteur: "NumWorks — modèle N0110", cat: "calc", matiere: "", niveau: "", etat: "Bon état", mode: "vente", prix: 35, statut: "dispo", proprietaire: "Camille", proprietaireCle: "camille", classe: "1re G4", note: "Achetée en seconde, je passe en L. Chargeur USB-C inclus.", isbn: "" },
+    { id: "x03", titre: "Le Rouge et le Noir", auteur: "Stendhal — Folio", cat: "lecture", matiere: "Français", niveau: "Première", etat: "Bon état", mode: "don", statut: "dispo", proprietaire: "Nawel", proprietaireCle: "nawel", classe: "1re G2", note: "Je l'ai fini pour l'oral, autant qu'il serve.", isbn: "9782070413331" },
+    { id: "x04", titre: "Blouse de SVT, taille M", auteur: "Coton blanc, manches longues", cat: "materiel", matiere: "SVT", niveau: "", etat: "Bon état", mode: "don", statut: "dispo", proprietaire: "Lina", proprietaireCle: "lina", classe: "Term S3", note: "Lavée. Une petite tache d'eau de Javel dans le dos.", isbn: "" },
+    { id: "x05", titre: "TI-83 Premium CE", auteur: "Texas Instruments", cat: "calc", matiere: "", niveau: "", etat: "Comme neuf", mode: "vente", prix: 30, statut: "reserve", proprietaire: "Yanis", proprietaireCle: "yanis", classe: "Term G2", reservePar: "Théo", reserveParCle: "theo", reserveParClasse: "1re G4", note: "Mode examen fonctionnel, jamais tombée.", isbn: "" },
+    { id: "x06", titre: "Les Fleurs du mal", auteur: "Baudelaire — GF", cat: "lecture", matiere: "Français", niveau: "Première", etat: "Comme neuf", mode: "troc", statut: "dispo", proprietaire: "Sofia", proprietaireCle: "sofia", classe: "2de 4", note: "", isbn: "9782081389472" },
+    { id: "x07", titre: "Lot de 3 classeurs A4", auteur: "Dos 4 cm, avec intercalaires", cat: "fournitures", matiere: "", niveau: "", etat: "Usé mais fonctionnel", mode: "don", statut: "dispo", proprietaire: "Rayan", proprietaireCle: "rayan", classe: "2de 7", note: "Anneaux impeccables, coins un peu cornés.", isbn: "" },
+    { id: "x08", titre: "SES Terminale spécialité", auteur: "Magnard", cat: "manuel", matiere: "SES", niveau: "Terminale", etat: "Bon état", mode: "troc", statut: "dispo", proprietaire: "Inès", proprietaireCle: "ines", classe: "Term G1", note: "Édition 2022, tout le programme.", isbn: "" },
+    { id: "x09", titre: "Numérique et sciences informatiques", auteur: "Ellipses — Terminale", cat: "manuel", matiere: "NSI", niveau: "Terminale", etat: "Comme neuf", mode: "vente", prix: 12, statut: "dispo", proprietaire: "Adam", proprietaireCle: "adam", classe: "Term G1", note: "Tout le programme NSI avec les corrigés Python.", isbn: "9782340061682" },
+    { id: "x10", titre: "Compas et équerre", auteur: "Maped — étui rigide", cat: "materiel", matiere: "Mathématiques", niveau: "", etat: "Bon état", mode: "don", statut: "dispo", proprietaire: "Jade", proprietaireCle: "jade", classe: "Term G3", note: "", isbn: "" },
+    { id: "x11", titre: "Harrap's Anglais poche", auteur: "Dictionnaire bilingue", cat: "lecture", matiere: "Langues", niveau: "", etat: "Correct", mode: "troc", statut: "dispo", proprietaire: "Nawel", proprietaireCle: "nawel", classe: "1re G2", note: "", isbn: "" },
+    { id: "x12", titre: "Casio Graph 35+E II", auteur: "Casio", cat: "calc", matiere: "", niveau: "", etat: "Bon état", mode: "vente", prix: 20, statut: "dispo", proprietaire: "Sofia", proprietaireCle: "sofia", classe: "2de 4", note: "Housse incluse, piles neuves.", isbn: "" },
+    { id: "x13", titre: "Physique-Chimie Première", auteur: "Nathan", cat: "manuel", matiere: "Physique-Chimie", niveau: "Première", etat: "Bon état", mode: "troc", statut: "dispo", proprietaire: "Lina", proprietaireCle: "lina", classe: "Term S3", note: "", isbn: "9782091729206" },
+    { id: "x14", titre: "Antigone", auteur: "Jean Anouilh — La Table Ronde", cat: "lecture", matiere: "Français", niveau: "Seconde", etat: "Correct", mode: "don", statut: "echange", proprietaire: "Rayan", proprietaireCle: "rayan", classe: "2de 7", note: "", isbn: "9782253004073" },
+    { id: "x15", titre: "Tenue EPS, survêtement M", auteur: "Bas de jogging bleu marine", cat: "sport", matiere: "", niveau: "", etat: "Bon état", mode: "don", statut: "dispo", proprietaire: "Théo", proprietaireCle: "theo", classe: "1re G4", note: "Trop petit pour moi maintenant.", isbn: "" }
+  ];
+  var EXEMPLES_MEMBRES = {
+    nawel:   { pseudo: "Nawel",   classe: "1re G2",  credits: 3, dons: 2 },
+    ismael:  { pseudo: "Ismaël",  classe: "Term S1", credits: 2, dons: 0 },
+    camille: { pseudo: "Camille", classe: "1re G4",  credits: 4, dons: 1 },
+    theo:    { pseudo: "Théo",    classe: "1re G4",  credits: 1, dons: 3 },
+    lina:    { pseudo: "Lina",    classe: "Term S3", credits: 2, dons: 1 },
+    sofia:   { pseudo: "Sofia",   classe: "2de 4",   credits: 3, dons: 1 },
+    rayan:   { pseudo: "Rayan",   classe: "2de 7",   credits: 1, dons: 4 },
+    ines:    { pseudo: "Inès",    classe: "Term G1", credits: 2, dons: 0 },
+    adam:    { pseudo: "Adam",    classe: "Term G1", credits: 2, dons: 0 },
+    yanis:   { pseudo: "Yanis",   classe: "Term G2", credits: 1, dons: 0 },
+    jade:    { pseudo: "Jade",    classe: "Term G3", credits: 2, dons: 1 }
+  };
+
+  /* ---------------- accès base ---------------- */
+
+  function objetsRef() { return state.db.collection("objets"); }
+  function membreRef(cle) { return state.db.doc("membres/" + cle); }
+
+  function moiMembre() { return state.me ? (state.membres[state.me.cle] || null) : null; }
+  function credits() { var m = moiMembre(); return m ? (m.credits || 0) : 0; }
+
+  function majMembre(cle, patch) {
+    var c = state.membres[cle] || { pseudo: cle, classe: "", credits: 0, dons: 0 };
+    var suivant = {
+      pseudo: c.pseudo, classe: c.classe,
+      credits: Math.max(0, (c.credits || 0) + (patch.credits || 0)),
+      dons: Math.max(0, (c.dons || 0) + (patch.dons || 0))
+    };
+    state.membres[cle] = suivant;
+    if (state.db) membreRef(cle).set(suivant).catch(erreurEcriture);
+    else sauverBib();
+    render();
+  }
+
+  function erreurEcriture(e) {
+    var code = e && e.code;
+    if (code === "quota_exceeded") toast("Le catalogue de démonstration est plein.");
+    else if (code === "resource_exhausted") toast("Trop d'actions d'un coup. Réessayez dans un instant.");
+    else toast("L'enregistrement n'a pas abouti. Réessayez.");
+  }
+
+  /* ---------------- actions ---------------- */
+
+  function creerCompte(pseudo, classe) {
+    var cle = slug(pseudo);
+    state.me = { pseudo: pseudo, classe: classe, cle: cle };
+    ecrire(state.me);
+    var e = state.membres[cle];
+    state.membres[cle] = {
+      pseudo: pseudo, classe: classe,
+      credits: e ? (e.credits || 0) : 2,
+      dons: e ? (e.dons || 0) : 0
+    };
+    if (state.db) membreRef(cle).set(state.membres[cle]).catch(erreurEcriture);
+    else sauverBib();
+    render();
+    toast("Bienvenue " + pseudo + " — 2 crédits pour démarrer les échanges.");
+  }
+
+  function deposer(o) {
+    o.id = Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+    o.statut = "dispo";
+    o.proprietaire = state.me.pseudo;
+    o.proprietaireCle = state.me.cle;
+    o.classe = state.me.classe;
+    o.depose = new Date().toISOString();
+    if (state.db) objetsRef().doc(o.id).set(o).catch(erreurEcriture);
+    else { state.objets.unshift(o); sauverBib(); }
+
+    if (o.mode === "troc") { majMembre(state.me.cle, { credits: 1 }); toast("Annonce publiée. +1 crédit."); }
+    else if (o.mode === "don") { render(); toast("Don publié. Merci — ça fait vivre le service."); }
+    else { render(); toast("Annonce publiée à " + prixFmt(o.prix) + ". Le règlement se fait en main propre."); }
+
+    state.onglet = "catalogue";
+    render();
+  }
+
+  function trouver(id) {
+    for (var i = 0; i < state.objets.length; i++) if (state.objets[i].id === id) return state.objets[i];
+    return null;
+  }
+
+  function ecrireObjet(o, champs) {
+    var k;
+    for (k in champs) if (Object.prototype.hasOwnProperty.call(champs, k)) o[k] = champs[k];
+    if (state.db) objetsRef().doc(o.id).set(o).catch(erreurEcriture);
+    else sauverBib();
+    render();
+  }
+
+  function reserver(id) {
+    var o = trouver(id);
+    if (!o) return;
+    if (o.mode === "troc" && credits() < 1) {
+      toast("Il vous faut 1 crédit. Déposez un objet en troc pour en gagner un.");
+      return;
+    }
+    ecrireObjet(o, {
+      statut: "reserve",
+      reservePar: state.me.pseudo,
+      reserveParCle: state.me.cle,
+      reserveParClasse: state.me.classe || ""
+    });
+    if (o.mode === "troc") {
+      majMembre(state.me.cle, { credits: -1 });
+      toast("Réservé — 1 crédit débité. Retrait au CDI.");
+    } else if (o.mode === "don") {
+      toast("Réservé. Contactez " + o.proprietaire + " pour le retrait au CDI.");
+    } else {
+      toast("Réservé à " + prixFmt(o.prix) + ". Paiement en main propre, l'application n'encaisse rien.");
+    }
+  }
+
+  function annuler(id) {
+    var o = trouver(id);
+    if (!o) return;
+    ecrireObjet(o, { statut: "dispo", reservePar: "", reserveParCle: "", reserveParClasse: "" });
+    if (o.mode === "troc") { majMembre(state.me.cle, { credits: 1 }); toast("Réservation annulée. Crédit rendu."); }
+    else toast("Réservation annulée.");
+  }
+
+  function confirmer(id) {
+    var o = trouver(id);
+    if (!o) return;
+    ecrireObjet(o, { statut: "echange" });
+    if (o.mode === "don" && o.proprietaireCle) {
+      majMembre(o.proprietaireCle, { dons: 1 });
+      toast("C'est noté. Un don de plus au compteur de " + o.proprietaire + ".");
+    } else {
+      toast("Échange confirmé.");
+    }
+  }
+
+  function retirer(id) {
+    var o = trouver(id);
+    if (!o) return;
+    if (state.db) objetsRef().doc(id).delete().catch(erreurEcriture);
+    else { state.objets = state.objets.filter(function (x) { return x.id !== id; }); sauverBib(); }
+    if (o.mode === "troc" && o.statut !== "echange") majMembre(state.me.cle, { credits: -1 });
+    render();
+    toast("Annonce retirée.");
+  }
+
+  function signaler(id) {
+    var o = trouver(id);
+    if (!o) return;
+    ecrireObjet(o, { signale: true, signalePar: state.me.pseudo });
+    toast("Signalé. Un adulte référent va vérifier l'annonce.");
+  }
+
+  /* ---------------- rendu ---------------- */
+
+  function renderBalance() {
+    var el = document.getElementById("balance");
+    if (!state.me) { el.innerHTML = ""; el.style.display = "none"; return; }
+    el.style.display = "";
+    var m = moiMembre() || { credits: 0, dons: 0 };
+    el.innerHTML =
+      '<div class="who"><b>' + esc(state.me.pseudo) + "</b><span>" + esc(state.me.classe || "—") + "</span></div>" +
+      ((m.dons || 0) > 0 ? '<div class="dons" title="Objets donnés"><b>' + m.dons + "</b><span>dons</span></div>" : "") +
+      '<div class="credits"><b>' + (m.credits || 0) + "</b><span>crédits</span></div>";
+  }
+
+  function renderOnboard() {
+    var el = document.getElementById("onboard");
+    if (state.me) { el.innerHTML = ""; return; }
+    el.innerHTML =
+      '<div class="onboard">' +
+        "<h2>Choisissez votre pseudo</h2>" +
+        "<p>Un pseudo et une classe suffisent — pas de nom de famille, pas d'adresse, pas de téléphone. " +
+        "Vous démarrez avec 2 crédits pour pouvoir prendre un objet en troc avant d'en avoir déposé un.</p>" +
+        '<form class="row" id="f-onboard">' +
+          '<div><label for="o-pseudo">Pseudo</label>' +
+            '<input id="o-pseudo" required maxlength="20" placeholder="Nawel" autocomplete="off"></div>' +
+          '<div><label for="o-classe">Classe</label>' +
+            '<input id="o-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>' +
+          '<button class="btn primary" type="submit">Entrer</button>' +
+        "</form>" +
+      "</div>";
+    document.getElementById("f-onboard").addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var p = document.getElementById("o-pseudo").value.trim();
+      if (!p) return;
+      creerCompte(p, document.getElementById("o-classe").value.trim());
+    });
+  }
+
+  function estActif(o) { return o.statut !== "echange" && !o.signale; }
+
+  function renderTabs() {
+    var dispo = state.objets.filter(function (o) { return o.statut === "dispo" && !o.signale; }).length;
+    var miens = state.me ? state.objets.filter(estAMoi).length : 0;
+    var defs = [
+      { id: "catalogue", nom: "Catalogue", n: dispo },
+      { id: "deposer", nom: "Déposer", n: null },
+      { id: "mes", nom: "Mes échanges", n: miens },
+      { id: "projet", nom: "Le projet", n: null }
+    ];
+    var html = "";
+    for (var i = 0; i < defs.length; i++) {
+      var d = defs[i];
+      html += '<button class="tab" role="tab" data-tab="' + d.id + '" aria-selected="' +
+        (state.onglet === d.id) + '">' + d.nom +
+        (d.n !== null ? '<span class="n">' + d.n + "</span>" : "") + "</button>";
+    }
+    document.getElementById("tabs").innerHTML = html;
+  }
+
+  function estAMoi(o) {
+    if (!state.me) return false;
+    return o.proprietaireCle === state.me.cle || o.reserveParCle === state.me.cle;
+  }
+
+  function badgeMode(o) {
+    if (o.mode === "don") return '<span class="mode don">Gratuit · don</span>';
+    if (o.mode === "vente") {
+      return '<span class="mode vente"><b>' + prixFmt(o.prix) + "</b><span>en main propre</span></span>";
+    }
+    return '<span class="mode troc">Troc · 1 crédit</span>';
+  }
+
+  function carte(o, contexte) {
+    var couleur = sw(o.cat);
+    var suisProprio = state.me && o.proprietaireCle === state.me.cle;
+    var suisPreneur = state.me && o.reserveParCle === state.me.cle;
+
+    var pill, cls = "";
+    if (o.signale) { pill = '<span class="pill signale">Signalé</span>'; cls = " gone"; }
+    else if (o.statut === "echange") { pill = '<span class="pill echange">Terminé</span>'; cls = " gone"; }
+    else if (o.statut === "reserve") { pill = '<span class="pill reserve">Réservé</span>'; }
+    else { pill = '<span class="pill dispo">Dispo</span>'; }
+
+    var actions = "";
+    if (state.me && !o.signale) {
+      if (o.statut === "dispo" && !suisProprio) {
+        var libelle = o.mode === "don" ? "Je le prends"
+                    : o.mode === "vente" ? "Ça m'intéresse"
+                    : "Réserver · 1 crédit";
+        var classe = o.mode === "don" ? "give" : "primary";
+        actions =
+          '<button class="btn ' + classe + '" data-act="reserver" data-id="' + o.id + '">' + libelle + "</button>" +
+          '<button class="btn icon" data-act="signaler" data-id="' + o.id + '" title="Signaler cette annonce" aria-label="Signaler cette annonce">⚑</button>';
+      } else if (o.statut === "dispo" && suisProprio) {
+        actions = '<button class="btn ghost" data-act="retirer" data-id="' + o.id + '">Retirer l\'annonce</button>';
+      } else if (o.statut === "reserve" && suisPreneur) {
+        actions =
+          '<button class="btn primary" data-act="confirmer" data-id="' + o.id + '">C\'est récupéré</button>' +
+          '<button class="btn ghost" data-act="annuler" data-id="' + o.id + '">Annuler</button>';
+      } else if (o.statut === "reserve" && suisProprio) {
+        actions = '<button class="btn ghost" disabled>En attente de ' + esc(o.reservePar || "…") + "</button>";
+      }
+    }
+
+    // Le rendez-vous n'apparaît qu'aux deux personnes concernées.
+    var contact = "";
+    if (o.statut === "reserve" && (suisProprio || suisPreneur)) {
+      var autre = suisProprio
+        ? esc(o.reservePar) + " (" + esc(o.reserveParClasse || "classe non renseignée") + ")"
+        : esc(o.proprietaire) + " (" + esc(o.classe || "classe non renseignée") + ")";
+      contact = '<div class="contact">Rendez-vous au CDI avec <b>' + autre + "</b>" +
+        (o.mode === "vente" ? " · règlement de " + prixFmt(o.prix) + " en main propre" : "") + "</div>";
+    }
+
+    return (
+      '<article class="obj' + cls + '" style="--sw:' + couleur + '">' +
+        '<div class="obj-head"><h3>' + esc(o.titre) + "</h3>" + pill + "</div>" +
+        (o.auteur ? '<p class="auteur">' + esc(o.auteur) + "</p>" : "") +
+        badgeMode(o) +
+        (o.note ? '<p class="note">' + esc(o.note) + "</p>" : "") +
+        (o.isbn ? '<span class="isbn">ISBN ' + esc(o.isbn) + "</span>" : "") +
+        '<div class="meta">' +
+          '<span class="tag cat">' + esc(catNom(o.cat)) + "</span>" +
+          (o.matiere ? '<span class="tag">' + esc(o.matiere) + "</span>" : "") +
+          (o.niveau ? '<span class="tag">' + esc(o.niveau) + "</span>" : "") +
+          '<span class="tag">' + esc(o.etat) + "</span>" +
+        "</div>" +
+        contact +
+        '<div class="owner">' +
+          (contexte === "mes" && suisPreneur && !suisProprio
+            ? "Chez <b>" + esc(o.proprietaire) + "</b>" + (o.classe ? " · " + esc(o.classe) : "")
+            : "Déposé par <b>" + esc(o.proprietaire) + "</b>" + (o.classe ? " · " + esc(o.classe) : "")) +
+        "</div>" +
+        (actions ? '<div class="obj-actions">' + actions + "</div>" : "") +
+      "</article>"
+    );
+  }
+
+  function filtrer() {
+    var q = state.filtre.q.toLowerCase().trim();
+    return state.objets.filter(function (o) {
+      if (!estActif(o)) return false;
+      if (state.filtre.mode && o.mode !== state.filtre.mode) return false;
+      if (state.filtre.cat && o.cat !== state.filtre.cat) return false;
+      if (state.filtre.niveau && o.niveau !== state.filtre.niveau) return false;
+      if (q) {
+        var foin = (o.titre + " " + (o.auteur || "") + " " + (o.isbn || "") + " " +
+                    catNom(o.cat) + " " + (o.matiere || "")).toLowerCase();
+        if (foin.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function vueCatalogue() {
+    var modes = [["", "Tout"], ["don", "Dons"], ["troc", "Trocs"], ["vente", "Ventes"]];
+    var seg = "";
+    for (var m = 0; m < modes.length; m++) {
+      seg += '<button data-mode="' + modes[m][0] + '" aria-pressed="' +
+        (state.filtre.mode === modes[m][0]) + '">' + modes[m][1] + "</button>";
+    }
+
+    var chips = '<button class="chip" data-cat="" aria-pressed="' + (!state.filtre.cat) + '">Toutes catégories</button>';
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      var c = CATEGORIES[i];
+      chips += '<button class="chip" data-cat="' + c.id + '" style="--sw:' + sw(c.id) + '" aria-pressed="' +
+        (state.filtre.cat === c.id) + '"><span class="swatch"></span>' + c.nom + "</button>";
+    }
+
+    var opts = '<option value="">Tous niveaux</option>';
+    for (var j = 0; j < NIVEAUX.length; j++) {
+      opts += '<option value="' + NIVEAUX[j] + '"' + (state.filtre.niveau === NIVEAUX[j] ? " selected" : "") + ">" + NIVEAUX[j] + "</option>";
+    }
+
+    var res = filtrer();
+    var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
+    var corps = res.length
+      ? '<div class="grid">' + res.map(function (o) { return carte(o, "catalogue"); }).join("") + "</div>"
+      : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
+        '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
+
+    return (
+      '<div class="filters">' +
+        '<div class="search">' +
+          '<input type="search" id="q" placeholder="Chercher un titre, une matière, un ISBN…" value="' + esc(state.filtre.q) + '" aria-label="Rechercher">' +
+          '<select id="niv" aria-label="Filtrer par niveau" style="flex:0 0 160px;width:auto">' + opts + "</select>" +
+        "</div>" +
+        '<div class="seg" role="group" aria-label="Filtrer par type d\'échange">' + seg + "</div>" +
+        '<div class="chiprail">' + chips + "</div>" +
+      "</div>" +
+      '<div class="count">' +
+        '<span class="lbl"><b>' + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
+        (gratuits ? " · dont <b>" + gratuits + "</b> gratuite" + (gratuits > 1 ? "s" : "") : "") + "</span>" +
+        '<span class="lbl">Remise au CDI</span>' +
+      "</div>" + corps
+    );
+  }
+
+  function vueDeposer() {
+    if (!state.me) {
+      return '<div class="panel"><h2>Choisissez d\'abord un pseudo</h2>' +
+        '<p class="sub">Le formulaire apparaît une fois votre pseudo enregistré, en haut de la page.</p></div>';
+    }
+
+    var cats = "";
+    for (var i = 0; i < CATEGORIES.length; i++) cats += '<option value="' + CATEGORIES[i].id + '">' + CATEGORIES[i].nom + "</option>";
+    var mats = '<option value="">Non concerné</option>';
+    for (var j = 0; j < MATIERES.length; j++) mats += '<option value="' + MATIERES[j] + '">' + MATIERES[j] + "</option>";
+    var nivs = '<option value="">Tous niveaux</option>';
+    for (var k = 0; k < NIVEAUX.length; k++) nivs += '<option value="' + NIVEAUX[k] + '">' + NIVEAUX[k] + "</option>";
+    var ets = "";
+    for (var l = 0; l < ETATS.length; l++) ets += '<option value="' + ETATS[l] + '">' + ETATS[l] + "</option>";
+
+    var choix = [
+      ["don", "Je donne", "Gratuit, sans contrepartie. Votre compteur de dons augmente."],
+      ["troc", "J'échange", "Vous gagnez 1 crédit tout de suite ; la personne qui le prend en dépense 1."],
+      ["vente", "Je vends", "Prix indicatif, plafonné à " + PLAFOND_PRIX + " €. Le règlement se fait en main propre."]
+    ];
+    var pick = "";
+    for (var p = 0; p < choix.length; p++) {
+      pick += '<button type="button" data-depot="' + choix[p][0] + '" aria-pressed="' +
+        (state.depotMode === choix[p][0]) + '"><b>' + choix[p][1] + "</b><span>" + choix[p][2] + "</span></button>";
+    }
+
+    var champPrix = state.depotMode === "vente"
+      ? '<div><label for="d-prix">Prix demandé <span class="opt">(max ' + PLAFOND_PRIX + ' €)</span></label>' +
+        '<input id="d-prix" type="number" min="1" max="' + PLAFOND_PRIX + '" step="0.5" required placeholder="15"></div>'
+      : "";
+
+    var avis = state.depotMode === "vente"
+      ? '<div class="notice"><b>L\'application n\'encaisse rien.</b> Elle affiche un prix, rien de plus : ' +
+        "pas de paiement en ligne, pas de commission, aucune coordonnée bancaire. " +
+        "Vous convenez de la remise et du règlement de la main à la main, au CDI.</div>"
+      : "";
+
+    return (
+      '<div class="panel"><form id="f-depot">' +
+        "<h2>Déposer une annonce</h2>" +
+        '<p class="sub">Manuels, romans, calculatrices, matériel, fournitures, tenue de sport — ' +
+        "tout ce qui sert au lycée et qui ne vous sert plus.</p>" +
+        '<label style="margin-bottom:9px">Que voulez-vous en faire ?</label>' +
+        '<div class="modepick">' + pick + "</div>" +
+        avis +
+        '<div class="form-grid" style="margin-top:18px">' +
+          '<div class="full"><label for="d-titre">Objet</label>' +
+            '<input id="d-titre" required maxlength="90" placeholder="Calculatrice NumWorks"></div>' +
+          '<div><label for="d-auteur">Auteur, marque ou modèle</label>' +
+            '<input id="d-auteur" maxlength="60" placeholder="NumWorks — modèle N0110"></div>' +
+          '<div><label for="d-cat">Catégorie</label><select id="d-cat">' + cats + "</select></div>" +
+          champPrix +
+          '<div><label for="d-mat">Matière <span class="opt">(si concerné)</span></label><select id="d-mat">' + mats + "</select></div>" +
+          '<div><label for="d-niv">Niveau <span class="opt">(si concerné)</span></label><select id="d-niv">' + nivs + "</select></div>" +
+          '<div><label for="d-etat">État</label><select id="d-etat">' + ets + "</select></div>" +
+          '<div><label for="d-isbn">ISBN <span class="opt">(livres)</span></label>' +
+            '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331"></div>' +
+          '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
+            '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
+        "</div>" +
+        '<div class="form-foot">' +
+          "<p>Aucune photo n'est stockée dans ce prototype : montrez l'objet au moment de la remise, au CDI.</p>" +
+          '<button class="btn ' + (state.depotMode === "don" ? "give" : "primary") + '" type="submit">' +
+            (state.depotMode === "don" ? "Publier le don" : state.depotMode === "troc" ? "Publier · +1 crédit" : "Publier l'annonce") +
+          "</button>" +
+        "</div>" +
+      "</form></div>"
+    );
+  }
+
+  function vueMes() {
+    if (!state.me) {
+      return '<div class="panel"><h2>Aucun échange pour l\'instant</h2>' +
+        '<p class="sub">Choisissez un pseudo en haut de la page pour commencer.</p></div>';
+    }
+    var deposes = state.objets.filter(function (o) { return o.proprietaireCle === state.me.cle; });
+    var pris = state.objets.filter(function (o) {
+      return o.reserveParCle === state.me.cle && o.proprietaireCle !== state.me.cle;
+    });
+
+    var html = "";
+    html += '<h2 class="section-title">À récupérer <span>' + pris.length + "</span></h2>";
+    html += pris.length
+      ? '<div class="grid">' + pris.map(function (o) { return carte(o, "mes"); }).join("") + "</div>"
+      : '<div class="empty"><p>Vous n\'avez réservé aucun objet.</p>' +
+        '<button class="btn ghost" data-act="aller-catalogue">Parcourir le catalogue</button></div>';
+
+    html += '<h2 class="section-title">Mes annonces <span>' + deposes.length + "</span></h2>";
+    html += deposes.length
+      ? '<div class="grid">' + deposes.map(function (o) { return carte(o, "mes"); }).join("") + "</div>"
+      : '<div class="empty"><p>Vous n\'avez encore rien déposé.</p>' +
+        '<button class="btn ghost" data-act="aller-depot">Déposer une annonce</button></div>';
+    return html;
+  }
+
+  function vueProjet() {
+    var legende = "";
+    for (var i = 0; i < CATEGORIES.length; i++) {
+      legende += '<div style="--sw:' + sw(CATEGORIES[i].id) + '"><i></i>' + CATEGORIES[i].nom + "</div>";
+    }
+    return (
+      '<div class="panel">' +
+        '<h2 style="margin-bottom:6px">Trois circuits, volontairement séparés</h2>' +
+        '<p class="sub">Chaque annonce relève d\'un seul circuit. Les crédits n\'existent que dans le troc : ' +
+        "si on pouvait aussi les gagner en donnant ou les dépenser en achetant, un circuit finirait par absorber les deux autres.</p>" +
+        '<div class="circuits">' +
+          '<div class="circuit" style="--sw:var(--ok)"><b>Don</b>' +
+            "<p>Je donne, quelqu'un prend. Aucune contrepartie.</p>" +
+            '<span class="flux">compteur de dons +1</span></div>' +
+          '<div class="circuit" style="--sw:var(--accent)"><b>Troc</b>' +
+            "<p>Je dépose, je gagne un crédit. Je prends, j'en dépense un.</p>" +
+            '<span class="flux">dépôt +1 · retrait −1</span></div>' +
+          '<div class="circuit" style="--sw:var(--c-fournitures)"><b>Vente</b>' +
+            "<p>Prix affiché, réglé de la main à la main.</p>" +
+            '<span class="flux">crédits non concernés</span></div>' +
+        "</div>" +
+        '<div class="prose">' +
+          "<p>Les 2 crédits offerts à l'inscription servent à amorcer : sans eux, personne ne peut " +
+          "rien prendre en troc le premier jour et le service ne démarre jamais.</p>" +
+        "</div>" +
+      "</div>" +
+
+      '<div class="panel"><div class="prose">' +
+        "<h2 style=\"margin-bottom:14px\">La règle qui protège le projet</h2>" +
+        "<p><strong>L'application n'encaisse jamais d'argent.</strong> Elle affiche un prix indicatif, " +
+        "et s'arrête là : aucun paiement en ligne, aucune commission, aucune coordonnée bancaire, " +
+        "aucun compte à créditer. Le règlement se fait en main propre, entre les deux personnes.</p>" +
+        "<p>Cette limite n'est pas une simplification technique, c'est ce qui garde le projet " +
+        "à portée d'un lycée. Le jour où l'on encaisse, on entre dans un tout autre monde réglementaire.</p>" +
+        "<h3>Deux vérifications avant d'ouvrir</h3>" +
+        "<ul>" +
+          "<li><strong>Le règlement intérieur.</strong> La plupart interdisent le commerce et le démarchage " +
+          "dans l'enceinte de l'établissement. Cherchez l'article correspondant : il conditionne tout le circuit vente.</li>" +
+          "<li><strong>La Maison des lycéens.</strong> C'est une association loi 1901, avec un bureau et un trésorier. " +
+          "Adossé à elle, le service devient <em>la bourse aux fournitures de la MDL en ligne</em> — " +
+          "une institution scolaire banale — au lieu d'un commerce entre élèves. C'est le même service, " +
+          "et ce n'est pas du tout la même conversation avec la direction.</li>" +
+        "</ul>" +
+        "<h3>Le plafond</h3>" +
+        "<p>Les prix sont bornés à <strong>" + PLAFOND_PRIX + " €</strong>. Le plafond coupe la spéculation " +
+        "et garde le service dans son objet : de la seconde main entre élèves, pas une place de marché. " +
+        "C'est à la MDL de fixer ce chiffre, pas aux élèves.</p>" +
+      "</div></div>" +
+
+      '<div class="panel"><div class="prose">' +
+        "<h2 style=\"margin-bottom:14px\">Parce que les utilisateurs sont mineurs</h2>" +
+        "<ul>" +
+          "<li><strong>Pseudo et classe uniquement</strong> — jamais de nom complet, d'adresse ni de téléphone.</li>" +
+          "<li><strong>Remise au CDI</strong>, à un point identifié. L'application n'organise aucune rencontre ailleurs.</li>" +
+          "<li><strong>Un adulte référent</strong> (documentaliste ou professeur) pour la modération, avec pouvoir de suppression.</li>" +
+          "<li><strong>Signalement sur chaque annonce</strong>, visible et à un seul clic.</li>" +
+          "<li><strong>Hébergement des données en Europe</strong>, information RGPD, suppression de compte possible.</li>" +
+          "<li><strong>Le don reste le chemin par défaut</strong> : c'est ce qui garantit que les élèves " +
+          "dont la famille ne peut pas payer trouvent quand même ce dont ils ont besoin.</li>" +
+        "</ul>" +
+      "</div></div>" +
+
+      '<div class="panel"><div class="prose">' +
+        "<h2 style=\"margin-bottom:14px\">De ce prototype à l'application réelle</h2>" +
+        '<ol class="steps">' +
+          "<li><b>Vérifier le règlement intérieur et rencontrer la MDL</b><p>Ces deux réponses décident si le circuit vente existe. Rien ne sert de coder avant.</p></li>" +
+          "<li><b>Faire tester le prototype</b><p>Une classe pilote pendant une semaine, pour voir ce qui manque vraiment.</p></li>" +
+          "<li><b>Connexion réservée au lycée</b><p>Adresse académique ou code d'invitation distribué au CDI, pour que le service reste fermé.</p></li>" +
+          "<li><b>Scan du code-barres</b><p>La caméra remplit titre et auteur depuis l'ISBN. Le dépôt passe de deux minutes à dix secondes.</p></li>" +
+          "<li><b>Photos et messagerie</b><p>Indispensable pour les calculatrices et le matériel : on veut voir l'état avant de se déplacer.</p></li>" +
+          "<li><b>Console de modération</b><p>Une page réservée au référent : annonces signalées, comptes, historique.</p></li>" +
+          "<li><b>Ouverture au lycée</b><p>Affiche au CDI, passage en classe, et un stock initial déposé par la MDL pour amorcer.</p></li>" +
+        "</ol>" +
+      "</div></div>" +
+
+      '<div class="panel"><div class="prose">' +
+        "<h2 style=\"margin-bottom:6px\">Code couleur des catégories</h2>" +
+        '<p class="sub" style="margin-bottom:0">La couleur porte la catégorie sur la tranche de chaque annonce : ' +
+        "c'est ce qu'on cherche en premier, et c'est le filtre principal.</p>" +
+        '<div class="legend">' + legende + "</div>" +
+      "</div></div>"
+    );
+  }
+
+  function render() {
+    renderBalance();
+    renderOnboard();
+    renderTabs();
+    var v = document.getElementById("view");
+    if (state.onglet === "catalogue") v.innerHTML = vueCatalogue();
+    else if (state.onglet === "deposer") v.innerHTML = vueDeposer();
+    else if (state.onglet === "mes") v.innerHTML = vueMes();
+    else v.innerHTML = vueProjet();
+
+    var q = document.getElementById("q");
+    if (q) q.addEventListener("input", function () { state.filtre.q = q.value; rerenderCatalogue(); });
+    var niv = document.getElementById("niv");
+    if (niv) niv.addEventListener("change", function () { state.filtre.niveau = niv.value; render(); });
+    var fd = document.getElementById("f-depot");
+    if (fd) fd.addEventListener("submit", onDepot);
+
+    renderStatus();
+  }
+
+  // Re-rend la grille seule, pour ne pas perdre le focus du champ de recherche à chaque frappe.
+  function rerenderCatalogue() {
+    if (state.onglet !== "catalogue") return;
+    var res = filtrer();
+    var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
+    var v = document.getElementById("view");
+    var cible = v.querySelector(".grid") || v.querySelector(".empty");
+    var lbl = v.querySelector(".count .lbl");
+    if (lbl) {
+      lbl.innerHTML = "<b>" + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
+        (gratuits ? " · dont <b>" + gratuits + "</b> gratuite" + (gratuits > 1 ? "s" : "") : "");
+    }
+    var neuf = res.length
+      ? '<div class="grid">' + res.map(function (o) { return carte(o, "catalogue"); }).join("") + "</div>"
+      : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
+        '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
+    if (cible) cible.outerHTML = neuf;
+  }
+
+  function renderStatus() {
+    var el = document.getElementById("status");
+    var n = state.objets.length;
+    if (state.db) {
+      el.innerHTML = "<b>" + n + "</b> annonces · catalogue partagé en direct entre toutes les personnes qui ouvrent ce lien.";
+    } else if (state.dbEssaye) {
+      el.innerHTML = "<b>Prototype</b> · le catalogue de départ est un jeu d'exemples ; vos annonces et réservations sont conservées sur cet appareil.";
+    } else {
+      el.textContent = "Chargement du catalogue…";
+    }
+  }
+
+  function onDepot(ev) {
+    ev.preventDefault();
+    var titre = document.getElementById("d-titre").value.trim();
+    if (!titre) return;
+
+    var prix = 0;
+    if (state.depotMode === "vente") {
+      prix = parseFloat(document.getElementById("d-prix").value);
+      if (!(prix > 0)) { toast("Indiquez un prix."); return; }
+      if (prix > PLAFOND_PRIX) {
+        toast("Prix plafonné à " + PLAFOND_PRIX + " €. Au-delà, ce n'est plus l'esprit du service.");
+        return;
+      }
+    }
+
+    deposer({
+      titre: titre,
+      auteur: document.getElementById("d-auteur").value.trim(),
+      isbn: document.getElementById("d-isbn").value.replace(/[^0-9Xx]/g, ""),
+      cat: document.getElementById("d-cat").value,
+      matiere: document.getElementById("d-mat").value,
+      niveau: document.getElementById("d-niv").value,
+      etat: document.getElementById("d-etat").value,
+      note: document.getElementById("d-note").value.trim(),
+      mode: state.depotMode,
+      prix: prix
+    });
+  }
+
+  /* ---------------- évènements ---------------- */
+
+  document.getElementById("tabs").addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-tab]");
+    if (!b) return;
+    state.onglet = b.getAttribute("data-tab");
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  document.getElementById("view").addEventListener("click", function (ev) {
+    var seg = ev.target.closest("[data-mode]");
+    if (seg) { state.filtre.mode = seg.getAttribute("data-mode"); render(); return; }
+
+    var chip = ev.target.closest("[data-cat]");
+    if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var dep = ev.target.closest("[data-depot]");
+    if (dep) { state.depotMode = dep.getAttribute("data-depot"); render(); return; }
+
+    var b = ev.target.closest("[data-act]");
+    if (!b) return;
+    var act = b.getAttribute("data-act");
+    var id = b.getAttribute("data-id");
+    if (act === "reserver") reserver(id);
+    else if (act === "annuler") annuler(id);
+    else if (act === "confirmer") confirmer(id);
+    else if (act === "retirer") retirer(id);
+    else if (act === "signaler") signaler(id);
+    else if (act === "reset") { state.filtre = { q: "", mode: "", cat: "", niveau: "" }; render(); }
+    else if (act === "aller-catalogue") { state.onglet = "catalogue"; render(); }
+    else if (act === "aller-depot") { state.onglet = "deposer"; render(); }
+  });
+
+  /* ---------------- démarrage ---------------- */
+
+  state.me = lire();
+  render();
+
+  function replier() {
+    var bib = lireBib();
+    state.objets = bib ? bib.objets : EXEMPLES.slice();
+    state.membres = bib ? bib.membres : JSON.parse(JSON.stringify(EXEMPLES_MEMBRES));
+    if (state.me && !state.membres[state.me.cle]) {
+      state.membres[state.me.cle] = { pseudo: state.me.pseudo, classe: state.me.classe, credits: 2, dons: 0 };
+    }
+    sauverBib();
+    render();
+  }
+
+  var pont = (window.claude && window.claude.use)
+    ? window.claude.use("db")
+    : Promise.resolve(null);
+
+  pont.then(function (db) {
+    state.dbEssaye = true;
+    if (!db) { replier(); return; }
+    state.db = db;
+
+    db.collection("objets").onSnapshot(function (snap) {
+      state.objets = snap.docs.map(function (d) {
+        var o = d.data() || {};
+        o.id = d.id;
+        return o;
+      }).sort(function (a, b) {
+        return String(b.depose || "").localeCompare(String(a.depose || ""));
+      });
+      render();
+    }, function () { state.db = null; replier(); });
+
+    db.collection("membres").onSnapshot(function (snap) {
+      var m = {};
+      snap.docs.forEach(function (d) { m[d.id] = d.data() || {}; });
+      state.membres = m;
+      if (state.me && !m[state.me.cle]) {
+        membreRef(state.me.cle).set({
+          pseudo: state.me.pseudo, classe: state.me.classe, credits: 2, dons: 0
+        }).catch(function () {});
+      }
+      render();
+    }, function () {});
+  }).catch(function () { state.dbEssaye = true; replier(); });
+})();
+</script>
+</body>
+</html>
