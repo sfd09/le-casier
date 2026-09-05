@@ -303,6 +303,13 @@ label .opt{font-weight:400;color:var(--faint)}
 }
 .scanner-texte small{display:block;color:rgba(255,255,255,.6);font-size:12px;margin-top:6px}
 .scanner-actions{display:flex;gap:9px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+.releve{
+  margin:14px 16px 0;padding:12px 14px;max-width:560px;max-height:34vh;overflow:auto;
+  background:rgba(255,255,255,.09);color:#fff;border-radius:9px;
+  font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;
+  word-break:break-word;text-align:left;
+}
+.releve[hidden]{display:none!important}
 .scanner-actions .btn{background:rgba(255,255,255,.14);color:#fff;border:0}
 .scanner-actions .btn:hover{background:rgba(255,255,255,.24)}
 .scanner-actions .btn.primary{background:var(--accent);color:#fff}
@@ -587,10 +594,12 @@ label .opt{font-weight:400;color:var(--faint)}
   <video id="scanner-video" playsinline muted></video>
   <div class="viseur" id="viseur"></div>
   <p class="scanner-texte" id="scanner-texte">Placez le code-barres du livre dans le cadre.<small>Il est au dos, sous le prix.</small></p>
+  <pre class="releve" id="releve" hidden></pre>
   <div class="scanner-actions">
     <button class="btn" type="button" data-scan="fermer">Annuler</button>
     <button class="btn" type="button" data-scan="lampe" id="btn-lampe" hidden>Lampe</button>
     <button class="btn" type="button" data-scan="photo">Photographier le code</button>
+    <button class="btn" type="button" data-scan="diagnostic">Diagnostic</button>
     <input type="file" id="isbn-photo" accept="image/*" capture="environment" hidden>
     <button class="btn primary" type="button" data-scan="manuel">Saisir à la main</button>
   </div>
@@ -1727,7 +1736,33 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   var scan = { flux: null, piste: null, lecteur: null, boucle: null,
-               actif: false, minuteur: null, toile: null, lampe: false };
+               actif: false, minuteur: null, toile: null, lampe: false,
+               journal: [], images: 0, vus: [] };
+
+  // Impossible de reproduire les échecs de lecture à distance : le scanner
+  // consigne donc ce qu'il fait, et l'élève peut nous transmettre le
+  // relevé. Sans cela on corrige à l'aveugle.
+  function noter(quoi) {
+    scan.journal.push(quoi);
+    if (scan.journal.length > 40) scan.journal.shift();
+  }
+
+  function releve() {
+    var l = [];
+    l.push("Appareil : " + navigator.userAgent);
+    l.push("Décodeur natif : " + (("BarcodeDetector" in window) ? "oui" : "non (bibliothèque utilisée)"));
+    l.push("Bibliothèque chargée : " + (window.ZXing ? "oui" : "non"));
+    var v = document.getElementById("scanner-video");
+    l.push("Vidéo : " + (v ? (v.videoWidth + "x" + v.videoHeight) : "absente"));
+    if (scan.piste && scan.piste.getSettings) {
+      var st = scan.piste.getSettings();
+      l.push("Caméra : " + st.width + "x" + st.height + " · " + (st.facingMode || "?"));
+    }
+    l.push("Images analysées : " + scan.images);
+    l.push("Codes vus : " + (scan.vus.length ? scan.vus.join(" | ") : "AUCUN"));
+    l.push("Journal : " + scan.journal.join(" > "));
+    return l.join("\n");
+  }
 
   function texteScan(msg, detail) {
     var el = document.getElementById("scanner-texte");
@@ -1758,6 +1793,9 @@ label .opt{font-weight:400;color:var(--faint)}
   // que le scan fonctionne.
   function codesLus(codes) {
     if (!scan.actif) return;
+    for (var k = 0; k < codes.length; k++) {
+      if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
+    }
     var isbn = extraireIsbn(codes);
     if (!isbn) return;
     fermerScanner();
@@ -1793,10 +1831,13 @@ label .opt{font-weight:400;color:var(--faint)}
     scan.actif = true;
     texteScan("Ouverture de la caméra…");
 
+    scan.journal = []; scan.images = 0; scan.vus = [];
     var natif = "BarcodeDetector" in window;
+    noter(natif ? "natif" : "bibliotheque");
     var demarrage = natif ? scanNatif(video) : chargerZXing().then(function () { return scanZXing(video); });
 
     demarrage.catch(function (e) {
+      noter("ERREUR " + (e && (e.name || e.message)));
       var m = String(e && e.name);
       if (m === "NotAllowedError")     texteScan("Accès à la caméra refusé.", "Autorisez la caméra dans les réglages du navigateur, puis réessayez.");
       else if (m === "NotFoundError")  texteScan("Aucune caméra trouvée.", "Saisissez l'ISBN à la main.");
@@ -1809,12 +1850,18 @@ label .opt{font-weight:400;color:var(--faint)}
   // pleine résolution et parfaitement nette : on décode celle-là.
   function decoderImage(fichier) {
     texteScan("Lecture de la photo…");
+    noter("photo " + Math.round(fichier.size / 1024) + "ko");
     var url = URL.createObjectURL(fichier);
     var img = new Image();
 
     img.onload = function () {
       var fini = function (codes) {
         URL.revokeObjectURL(url);
+        noter("photo " + img.naturalWidth + "x" + img.naturalHeight +
+              " codes:" + ((codes || []).length));
+        for (var k = 0; k < (codes || []).length; k++) {
+          if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
+        }
         var isbn = extraireIsbn(codes || []);
         if (isbn) { codesLus([isbn]); return; }
         texteScan("Code non reconnu sur cette photo.",
@@ -1850,6 +1897,20 @@ label .opt{font-weight:400;color:var(--faint)}
     img.src = url;
   }
 
+  function afficherReleve() {
+    var boite = document.getElementById("releve");
+    var texte = releve();
+    boite.textContent = texte;
+    boite.hidden = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texte)
+        .then(function () { toast("Relevé copié — collez-le dans la conversation."); })
+        .catch(function () { toast("Relevé affiché : recopiez-le ou faites une capture."); });
+    } else {
+      toast("Relevé affiché : faites une capture d'écran.");
+    }
+  }
+
   function viserEtPatienter() {
     texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
     if (scan.minuteur) clearTimeout(scan.minuteur);
@@ -1857,7 +1918,7 @@ label .opt{font-weight:400;color:var(--faint)}
     // l'élève insister dans le vide.
     scan.minuteur = setTimeout(function () {
       if (scan.actif) texteScan("Toujours rien ?",
-        "Couverture brillante : inclinez le livre pour chasser le reflet. Tenez-le à 15-20 cm, bien à plat, et laissez la mise au point se faire. Sinon, saisissez l'ISBN à la main.");
+        "Inclinez le livre pour chasser le reflet, tenez-le à 15-20 cm bien à plat. Sinon : « Photographier le code », ou saisissez l'ISBN à la main. Le bouton Diagnostic indique ce que voit l'application.");
     }, 10000);
   }
 
@@ -1889,7 +1950,8 @@ label .opt{font-weight:400;color:var(--faint)}
         var b = document.getElementById("btn-lampe");
         if (b) b.hidden = false;
       }
-      return video.play();
+      noter("camera ouverte");
+      return video.play().then(function () { noter("video en lecture"); });
     });
   }
 
@@ -1929,6 +1991,7 @@ label .opt{font-weight:400;color:var(--faint)}
         viserEtPatienter();
         function tour() {
           if (!scan.actif) return;
+          scan.images++;
           detecteur.detect(imageDuViseur(video) || video)
             .then(function (codes) {
               if (codes && codes.length) {
@@ -1955,10 +2018,15 @@ label .opt{font-weight:400;color:var(--faint)}
     // sur cet élément vidéo.
     return ouvrirCamera(video).then(function () {
       viserEtPatienter();
-      var rappel = function (resultat) { if (resultat) codesLus([resultat.getText()]); };
+      var rappel = function (resultat) {
+        scan.images++;
+        if (resultat) { noter("code lu"); codesLus([resultat.getText()]); }
+      };
       if (typeof scan.lecteur.decodeFromVideoElement === "function") {
+        noter("decodeFromVideoElement");
         return scan.lecteur.decodeFromVideoElement(video, rappel);
       }
+      noter("decodeFromVideoDevice");
       return scan.lecteur.decodeFromVideoDevice(null, video, rappel);
     });
   }
@@ -2078,6 +2146,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var quoi = b.getAttribute("data-scan");
     if (quoi === "lampe") { basculerLampe(); return; }
     if (quoi === "photo") { var f = document.getElementById("isbn-photo"); if (f) f.click(); return; }
+    if (quoi === "diagnostic") { afficherReleve(); return; }
     fermerScanner();
     if (quoi === "manuel") { var i = document.getElementById("d-isbn"); if (i) i.focus(); }
   });
