@@ -262,6 +262,23 @@ label .opt{font-weight:400;color:var(--faint)}
   border-radius:var(--r);padding:13px 14px 12px;
 }
 .obj.gone{opacity:.62}
+.vignette{
+  position:relative;aspect-ratio:4/3;border-radius:7px;overflow:hidden;
+  background:color-mix(in srgb,var(--sw) 9%,var(--surface-2));
+  display:flex;align-items:center;justify-content:center;
+}
+.vignette img{width:100%;height:100%;object-fit:cover;display:block}
+.vignette span{
+  font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--sw);opacity:.7;padding:0 10px;text-align:center;
+}
+.photo-champ{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.photo-etat{font-size:13px;color:var(--muted)}
+.photo-apercu{
+  margin-top:11px;max-width:230px;border-radius:8px;overflow:hidden;
+  border:1px solid var(--line);
+}
+.photo-apercu img{display:block;width:100%;height:auto}
 .obj-head{display:flex;gap:8px;align-items:flex-start}
 .obj h3{
   margin:0;font-family:"Fraunces","Iowan Old Style",Georgia,serif;
@@ -542,7 +559,8 @@ label .opt{font-weight:400;color:var(--faint)}
     sb: null,        // client Supabase
     moiId: null,     // identifiant anonyme de cet appareil
     pret: false,
-    horsLigne: null
+    horsLigne: null,
+    photo: null      // image compressée, en attente d'envoi
   };
 
   function esc(s) {
@@ -613,11 +631,78 @@ label .opt{font-weight:400;color:var(--faint)}
       etat: r.etat || "", note: r.note || "",
       mode: r.mode, prix: Number(r.prix) || 0,
       statut: r.statut, signale: !!r.signale, depose: r.depose_le,
+      photo: r.photo || "",
       proprietaire: pro.pseudo || "…", proprietaireCle: r.proprietaire,
       classe: pro.classe || "",
       reservePar: pre ? pre.pseudo : "", reserveParCle: r.preneur || "",
       reserveParClasse: pre ? (pre.classe || "") : ""
     };
+  }
+
+  function urlPhoto(chemin) {
+    return SUPABASE_URL + "/storage/v1/object/public/photos/" + chemin;
+  }
+
+  // Une photo de téléphone pèse 3 à 5 Mo. On la redimensionne et on la
+  // recompresse AVANT l'envoi : sans cela, un dépôt en 4G prendrait une
+  // minute et le quota de stockage serait consommé en quelques semaines.
+  var PHOTO_MAX_PX = 1200;
+  var PHOTO_QUALITE = 0.72;
+
+  function compresser(fichier) {
+    function dessiner(source, l, h) {
+      var r = Math.min(1, PHOTO_MAX_PX / Math.max(l, h));
+      var c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(l * r));
+      c.height = Math.max(1, Math.round(h * r));
+      c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
+      return new Promise(function (res, rej) {
+        c.toBlob(function (b) { b ? res(b) : rej(new Error("compression impossible")); },
+                 "image/jpeg", PHOTO_QUALITE);
+      });
+    }
+
+    // createImageBitmap respecte l'orientation EXIF : sans lui, les photos
+    // prises en portrait sur iPhone arrivent couchées.
+    if (window.createImageBitmap) {
+      return createImageBitmap(fichier, { imageOrientation: "from-image" })
+        .then(function (bmp) {
+          return dessiner(bmp, bmp.width, bmp.height).then(function (b) {
+            if (bmp.close) bmp.close();
+            return b;
+          });
+        })
+        .catch(function () { return viaImage(fichier, dessiner); });
+    }
+    return viaImage(fichier, dessiner);
+  }
+
+  function viaImage(fichier, dessiner) {
+    return new Promise(function (res, rej) {
+      var url = URL.createObjectURL(fichier);
+      var img = new Image();
+      img.onload = function () {
+        dessiner(img, img.naturalWidth, img.naturalHeight).then(res, rej);
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("image illisible")); };
+      img.src = url;
+    });
+  }
+
+  function identifiant() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  }
+
+  function televerser(blob) {
+    var chemin = state.moiId + "/" + identifiant() + ".jpg";
+    return state.sb.storage.from("photos")
+      .upload(chemin, blob, { contentType: "image/jpeg", upsert: false })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        return chemin;
+      });
   }
 
   function rpc(nom, params) {
@@ -683,8 +768,10 @@ label .opt{font-weight:400;color:var(--faint)}
     rpc("deposer_objet", {
       p_titre: o.titre, p_auteur: o.auteur, p_isbn: o.isbn,
       p_categorie: o.cat, p_matiere: o.matiere, p_niveau: o.niveau,
-      p_etat: o.etat, p_note: o.note, p_mode: o.mode, p_prix: o.prix
+      p_etat: o.etat, p_note: o.note, p_mode: o.mode, p_prix: o.prix,
+      p_photo: o.photo || null
     }).then(function () {
+      state.photo = null;
       state.onglet = "catalogue";
       return charger();
     }).then(function () {
@@ -725,8 +812,18 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function retirer(id) {
-    rpc("retirer_objet", { p_objet: id }).then(charger)
-      .then(function () { toast("Annonce retirée."); }).catch(echec);
+    var o = trouver(id);
+    // La photo part en premier : le stockage n'accepte cette suppression
+    // que de son propriétaire, et l'annonce en porte seule le chemin.
+    var prealable = (o && o.photo)
+      ? state.sb.storage.from("photos").remove([o.photo]).catch(function () {})
+      : Promise.resolve();
+
+    prealable
+      .then(function () { return rpc("retirer_objet", { p_objet: id }); })
+      .then(charger)
+      .then(function () { toast("Annonce retirée."); })
+      .catch(echec);
   }
 
   function signaler(id) {
@@ -849,6 +946,11 @@ label .opt{font-weight:400;color:var(--faint)}
 
     return (
       '<article class="obj' + cls + '" style="--sw:' + couleur + '">' +
+        '<div class="vignette">' +
+          (o.photo
+            ? '<img src="' + esc(urlPhoto(o.photo)) + '" alt="" loading="lazy" decoding="async">'
+            : "<span>" + esc(catNom(o.cat)) + "</span>") +
+        "</div>" +
         '<div class="obj-head"><h3>' + esc(o.titre) + "</h3>" + pill + "</div>" +
         (o.auteur ? '<p class="auteur">' + esc(o.auteur) + "</p>" : "") +
         badgeMode(o) +
@@ -990,9 +1092,22 @@ label .opt{font-weight:400;color:var(--faint)}
             '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331"></div>' +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
+          '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
+            '<div class="photo-champ">' +
+              '<input type="file" id="d-photo" accept="image/*" capture="environment" hidden>' +
+              '<button type="button" class="btn ghost" data-photo="choisir">' +
+                (state.photo ? "Changer la photo" : "Prendre une photo") + "</button>" +
+              (state.photo ? '<button type="button" class="btn ghost" data-photo="retirer">Retirer</button>' : "") +
+              '<span class="photo-etat" id="photo-etat">' +
+                (state.photo ? Math.round(state.photo.size / 1024) + " ko, prête à l\'envoi" : "Aucune photo") +
+              "</span>" +
+            "</div>" +
+            '<div class="photo-apercu" id="photo-apercu"' + (state.photo ? "" : ' hidden') + "></div>" +
+          "</div>" +
         "</div>" +
         '<div class="form-foot">' +
-          "<p>Aucune photo n'est stockée dans ce prototype : montrez l'objet au moment de la remise, au CDI.</p>" +
+          "<p>Photographiez <strong>l'objet seul</strong>. Aucune photo de personne, " +
+          "ni de document portant un nom : les annonces sont visibles par tout le lycée.</p>" +
           '<button class="btn ' + (state.depotMode === "don" ? "give" : "primary") + '" type="submit">' +
             (state.depotMode === "don" ? "Publier le don" : state.depotMode === "troc" ? "Publier · +1 crédit" : "Publier l'annonce") +
           "</button>" +
@@ -1127,6 +1242,10 @@ label .opt{font-weight:400;color:var(--faint)}
     var fd = document.getElementById("f-depot");
     if (fd) fd.addEventListener("submit", onDepot);
 
+    var fp = document.getElementById("d-photo");
+    if (fp) fp.addEventListener("change", onPhotoChoisie);
+    if (state.photo) apercuPhoto();
+
     renderStatus();
   }
 
@@ -1162,6 +1281,35 @@ label .opt{font-weight:400;color:var(--faint)}
     }
   }
 
+  function apercuPhoto() {
+    var box = document.getElementById("photo-apercu");
+    if (!box || !state.photo) return;
+    var url = URL.createObjectURL(state.photo);
+    box.innerHTML = '<img src="' + url + '" alt="Aperçu de la photo">';
+    box.hidden = false;
+    box.firstChild.onload = function () { URL.revokeObjectURL(url); };
+  }
+
+  function onPhotoChoisie(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    if (!/^image\//.test(f.type)) { toast("Ce fichier n'est pas une image."); return; }
+
+    var etat = document.getElementById("photo-etat");
+    if (etat) etat.textContent = "Compression…";
+
+    compresser(f).then(function (blob) {
+      state.photo = blob;
+      render();
+      toast("Photo prête : " + Math.round(f.size / 1024) + " ko réduits à " +
+            Math.round(blob.size / 1024) + " ko.");
+    }).catch(function () {
+      state.photo = null;
+      render();
+      toast("Cette image n'a pas pu être lue. Réessayez.");
+    });
+  }
+
   function onDepot(ev) {
     ev.preventDefault();
     var titre = document.getElementById("d-titre").value.trim();
@@ -1177,7 +1325,7 @@ label .opt{font-weight:400;color:var(--faint)}
       }
     }
 
-    deposer({
+    var champs = {
       titre: titre,
       auteur: document.getElementById("d-auteur").value.trim(),
       isbn: document.getElementById("d-isbn").value.replace(/[^0-9Xx]/g, ""),
@@ -1188,6 +1336,18 @@ label .opt{font-weight:400;color:var(--faint)}
       note: document.getElementById("d-note").value.trim(),
       mode: state.depotMode,
       prix: prix
+    };
+
+    // La photo part en premier : si l'envoi échoue, aucune annonce
+    // orpheline n'est créée.
+    if (!state.photo) { deposer(champs); return; }
+
+    toast("Envoi de la photo…");
+    televerser(state.photo).then(function (chemin) {
+      champs.photo = chemin;
+      deposer(champs);
+    }).catch(function () {
+      toast("La photo n'a pas pu être envoyée. Réessayez, ou publiez sans photo.");
     });
   }
 
@@ -1207,6 +1367,13 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var ph = ev.target.closest("[data-photo]");
+    if (ph) {
+      if (ph.getAttribute("data-photo") === "retirer") { state.photo = null; render(); }
+      else { var i = document.getElementById("d-photo"); if (i) i.click(); }
+      return;
+    }
 
     var dep = ev.target.closest("[data-depot]");
     if (dep) { state.depotMode = dep.getAttribute("data-depot"); render(); return; }
