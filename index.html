@@ -1669,18 +1669,52 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- scan de l'ISBN ---------------- */
 
-  // Un ISBN-13 porte une clé de contrôle. La vérifier évite d'agir sur
-  // une lecture erronée : un code mal lu est rejeté au lieu de lancer
-  // une recherche sur un livre qui n'existe pas.
-  function isbnValide(code) {
-    var c = String(code || "").replace(/[^0-9]/g, "");
-    if (c.length !== 13) return false;
+  // Un livre porte SOUVENT DEUX codes-barres : l'EAN-13 qui encode
+  // l'ISBN, et un petit code additionnel à 5 chiffres pour le prix.
+  // Il faut donc examiner tous les codes détectés et retenir celui qui
+  // est un ISBN, au lieu de prendre le premier venu.
+
+  function cleEan13(c) {
     var somme = 0;
     for (var i = 0; i < 12; i++) somme += (+c[i]) * (i % 2 ? 3 : 1);
     return (10 - (somme % 10)) % 10 === +c[12];
   }
 
-  var scan = { flux: null, lecteur: null, boucle: null, actif: false };
+  function cleIsbn10(c) {
+    var somme = 0;
+    for (var i = 0; i < 9; i++) somme += (+c[i]) * (10 - i);
+    var d = c[9] === "X" ? 10 : +c[9];
+    return (somme + d) % 11 === 0;
+  }
+
+  // Les livres d'avant 2007 portent un ISBN-10 : on le convertit plutôt
+  // que de le rejeter, sinon la moitié d'un CDI serait illisible.
+  function isbn10Vers13(c) {
+    var base = "978" + c.slice(0, 9);
+    var somme = 0;
+    for (var i = 0; i < 12; i++) somme += (+base[i]) * (i % 2 ? 3 : 1);
+    return base + ((10 - (somme % 10)) % 10);
+  }
+
+  function normaliserIsbn(brut) {
+    var c = String(brut || "").toUpperCase().replace(/[^0-9X]/g, "");
+    if (c.length === 13 && /^97[89]/.test(c) && cleEan13(c)) return c;
+    if (c.length === 10 && cleIsbn10(c)) return isbn10Vers13(c);
+    return null;
+  }
+
+  function isbnValide(code) { return !!normaliserIsbn(code); }
+
+  // Retient le premier code de la liste qui soit un ISBN.
+  function extraireIsbn(codes) {
+    for (var i = 0; i < codes.length; i++) {
+      var n = normaliserIsbn(codes[i]);
+      if (n) return n;
+    }
+    return null;
+  }
+
+  var scan = { flux: null, lecteur: null, boucle: null, actif: false, minuteur: null };
 
   function texteScan(msg, detail) {
     var el = document.getElementById("scanner-texte");
@@ -1689,6 +1723,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function fermerScanner() {
     scan.actif = false;
+    if (scan.minuteur) { clearTimeout(scan.minuteur); scan.minuteur = null; }
     if (scan.boucle) { cancelAnimationFrame(scan.boucle); scan.boucle = null; }
     if (scan.lecteur) { try { scan.lecteur.reset(); } catch (e) {} scan.lecteur = null; }
     if (scan.flux) { scan.flux.getTracks().forEach(function (t) { t.stop(); }); scan.flux = null; }
@@ -1698,14 +1733,18 @@ label .opt{font-weight:400;color:var(--faint)}
     document.body.style.overflow = "";
   }
 
-  function codeLu(code) {
+  // Reçoit TOUS les codes vus sur l'image. Un code qui n'est pas un ISBN
+  // — le code prix, un code produit — est ignoré en silence : afficher
+  // une erreur à chaque image ferait clignoter un message d'échec alors
+  // que le scan fonctionne.
+  function codesLus(codes) {
     if (!scan.actif) return;
-    var c = String(code).replace(/[^0-9]/g, "");
-    if (!isbnValide(c)) { texteScan("Code illisible, continuez à viser.", "Ce n'est pas un ISBN valide."); return; }
+    var isbn = extraireIsbn(codes);
+    if (!isbn) return;
     fermerScanner();
     var champ = document.getElementById("d-isbn");
-    if (champ) champ.value = c;
-    remplirDepuisIsbn(c);
+    if (champ) champ.value = isbn;
+    remplirDepuisIsbn(isbn);
   }
 
   // Chrome et Android savent lire un code-barres nativement. Safari non :
@@ -1745,8 +1784,20 @@ label .opt{font-weight:400;color:var(--faint)}
     });
   }
 
+  function viserEtPatienter() {
+    texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+    if (scan.minuteur) clearTimeout(scan.minuteur);
+    // Au bout de dix secondes sans lecture, on aide au lieu de laisser
+    // l'élève insister dans le vide.
+    scan.minuteur = setTimeout(function () {
+      if (scan.actif) texteScan("Toujours rien ?",
+        "Éloignez le livre d'une vingtaine de centimètres, cherchez un meilleur éclairage, ou saisissez l'ISBN à la main.");
+    }, 10000);
+  }
+
   function scanNatif(video) {
-    var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "isbn_13" in window ? "isbn_13" : "ean_13"] });
+    // ean_13 encode l'ISBN ; ean_8 couvre quelques éditions anciennes.
+    var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "ean_8"] });
     return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
       .then(function (flux) {
         scan.flux = flux;
@@ -1754,12 +1805,14 @@ label .opt{font-weight:400;color:var(--faint)}
         return video.play();
       })
       .then(function () {
-        texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+        viserEtPatienter();
         function tour() {
           if (!scan.actif) return;
           detecteur.detect(video)
             .then(function (codes) {
-              if (codes && codes.length) codeLu(codes[0].rawValue);
+              if (codes && codes.length) {
+                codesLus(codes.map(function (c) { return c.rawValue; }));
+              }
             })
             .catch(function () {})
             .then(function () { if (scan.actif) scan.boucle = requestAnimationFrame(tour); });
@@ -1769,10 +1822,16 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function scanZXing(video) {
-    scan.lecteur = new window.ZXing.BrowserMultiFormatReader();
-    texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+    // Sans ces indications, le décodeur essaie tous les formats existants :
+    // il est plus lent et se trompe davantage. On le restreint aux codes
+    // de livre et on lui demande d'insister sur les images floues.
+    var Z = window.ZXing, indices = new Map();
+    indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8]);
+    indices.set(Z.DecodeHintType.TRY_HARDER, true);
+    scan.lecteur = new Z.BrowserMultiFormatReader(indices);
+    viserEtPatienter();
     return scan.lecteur.decodeFromVideoDevice(null, video, function (resultat) {
-      if (resultat) codeLu(resultat.getText());
+      if (resultat) codesLus([resultat.getText()]);
     });
   }
 
