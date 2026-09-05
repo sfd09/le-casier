@@ -1021,6 +1021,14 @@ label .opt{font-weight:400;color:var(--faint)}
     }).then(function () {
       state.photo = null;
       state.onglet = "catalogue";
+      // La saisie de cet élève devient la fiche du lycée pour cet ISBN :
+      // les suivants n'auront plus à la refaire.
+      if (o.isbn && /^[0-9]{13}$/.test(o.isbn) && o.titre) {
+        rpc("enregistrer_fiche", {
+          p_isbn: o.isbn, p_titre: o.titre, p_auteur: o.auteur || "",
+          p_categorie: o.cat || "", p_matiere: o.matiere || "", p_niveau: o.niveau || ""
+        }).catch(function () {});   // sans conséquence si l'enregistrement échoue
+      }
       return charger();
     }).then(function () {
       if (o.mode === "troc")     toast("Annonce publiée. +1 crédit.");
@@ -1414,7 +1422,7 @@ label .opt{font-weight:400;color:var(--faint)}
               '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331" style="flex:1 1 130px;width:auto">' +
               '<button type="button" class="btn ghost" data-scan="ouvrir">Scanner</button>' +
             "</div>" +
-            '<p class="aide-scan">Scannez le code-barres au dos du livre, ou tapez les 13 chiffres : le titre et l\'auteur se remplissent seuls.</p></div>' +
+            '<p class="aide-scan">Scannez le code-barres ou tapez les 13 chiffres. Si le livre est inconnu, votre saisie deviendra sa fiche pour tout le lycée.</p></div>' +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
           '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
@@ -2055,6 +2063,26 @@ label .opt{font-weight:400;color:var(--faint)}
     return "";
   }
 
+  // 1. La mémoire du lycée. Interrogée en premier : c'est la seule source
+  //    qui connaisse le parascolaire français, et la seule qui réponde
+  //    instantanément.
+  function chercherFiche(isbn) {
+    if (!state.sb) return Promise.resolve(null);
+    return state.sb.from("fiches").select("*").eq("isbn", isbn).maybeSingle()
+      .then(function (r) {
+        if (r.error || !r.data) return null;
+        var f = r.data;
+        return {
+          titre: f.titre, auteur: f.auteur || "",
+          categorie: f.categorie || "", matiere: f.matiere || "", niveau: f.niveau || "",
+          source: f.saisies > 1
+            ? "renseigné par " + f.saisies + " élèves du lycée"
+            : "renseigné par un élève du lycée"
+        };
+      })
+      .catch(function () { return null; });
+  }
+
   function chercherGoogle(isbn) {
     return fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn)
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -2087,35 +2115,80 @@ label .opt{font-weight:400;color:var(--faint)}
       .catch(function () { return null; });
   }
 
+  // La BnF n'indexe les ISBN qu'à dix chiffres pour une partie de ses
+  // notices : on essaie les deux formes.
+  function isbn13Vers10(c) {
+    var noyau = c.slice(3, 12), somme = 0;
+    for (var i = 0; i < 9; i++) somme += (+noyau[i]) * (10 - i);
+    var cle = (11 - (somme % 11)) % 11;
+    return noyau + (cle === 10 ? "X" : String(cle));
+  }
+
+  function interrogerBnf(code) {
+    var url = "https://catalogue.bnf.fr/api/SRU?version=1.2&operation=searchRetrieve" +
+              "&query=" + encodeURIComponent('bib.isbn all "' + code + '"') +
+              "&recordSchema=dublincore&maximumRecords=1";
+    return fetch(url)
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (xml) {
+        if (!xml) return null;
+        var doc = new DOMParser().parseFromString(xml, "application/xml");
+        var lire = function (tag) {
+          var n = doc.getElementsByTagName("dc:" + tag)[0];
+          return n && n.textContent ? n.textContent.trim() : "";
+        };
+        var titre = lire("title");
+        if (!titre) return null;
+        return {
+          titre: titre.replace(/\s*\/\s*.*$/, "").slice(0, 90),
+          auteur: lire("creator") || lire("publisher") || "",
+          source: "BnF"
+        };
+      })
+      .catch(function () { return null; });
+  }
+
+  function chercherBnf(isbn) {
+    return interrogerBnf(isbn).then(function (r) {
+      if (r) return r;
+      return /^978/.test(isbn) ? interrogerBnf(isbn13Vers10(isbn)) : null;
+    });
+  }
+
   // Le scan reste utile même quand aucun catalogue ne connaît le livre :
   // l'ISBN est rempli sans faute de frappe, et l'élève complète le reste.
   function remplirDepuisIsbn(isbn) {
-    toast("ISBN " + isbn + " — recherche du livre…");
-    chercherGoogle(isbn)
+    toast("ISBN " + isbn + " — recherche…");
+    // La mémoire du lycée d'abord : instantanée, et seule à connaître
+    // les manuels scolaires français.
+    chercherFiche(isbn)
+      .then(function (r) { return r || chercherGoogle(isbn); })
       .then(function (r) { return r || chercherOpenLibrary(isbn); })
+      .then(function (r) { return r || chercherBnf(isbn); })
       .then(function (r) {
+        var champ = function (id) { return document.getElementById(id); };
         if (!r) {
-          toast("Livre inconnu des catalogues. L'ISBN est rempli, complétez le titre.");
-          var t = document.getElementById("d-titre");
-          if (t) t.focus();
+          toast("Livre inconnu : saisissez le titre. Il servira aux autres élèves.");
+          if (champ("d-titre")) champ("d-titre").focus();
           return;
         }
-        var champ = function (id) { return document.getElementById(id); };
-        if (champ("d-titre") && !champ("d-titre").value) champ("d-titre").value = r.titre;
+        if (champ("d-titre") && !champ("d-titre").value)  champ("d-titre").value = r.titre;
         if (champ("d-auteur") && !champ("d-auteur").value) champ("d-auteur").value = r.auteur;
 
         var texte = r.titre + " " + r.auteur;
-        var mat = deviner(MOTS_MATIERE, texte);
-        var niv = deviner(MOTS_NIVEAU, texte);
+        var mat = r.matiere || deviner(MOTS_MATIERE, texte);
+        var niv = r.niveau  || deviner(MOTS_NIVEAU, texte);
         if (mat && champ("d-mat")) champ("d-mat").value = mat;
         if (niv && champ("d-niv")) champ("d-niv").value = niv;
         if (champ("d-cat")) {
-          champ("d-cat").value = /manuel|[eé]dition scolaire|programme|bordas|nathan|hachette|magnard|hatier|belin|delagrave/i.test(texte)
-            ? "manuel" : "lecture";
+          champ("d-cat").value = r.categorie ||
+            (/manuel|programme|bordas|nathan|hachette|magnard|hatier|belin|delagrave|ellipses|dunod|vuibert/i.test(texte)
+              ? "manuel" : "lecture");
         }
-        toast("Trouvé : " + r.titre.slice(0, 40) + " — vérifiez et complétez.");
+        toast(r.titre.slice(0, 38) + " — " + r.source);
       });
   }
+
 
   /* ---------------- visionneuse ---------------- */
 
