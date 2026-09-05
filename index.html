@@ -589,6 +589,9 @@ label .opt{font-weight:400;color:var(--faint)}
   <p class="scanner-texte" id="scanner-texte">Placez le code-barres du livre dans le cadre.<small>Il est au dos, sous le prix.</small></p>
   <div class="scanner-actions">
     <button class="btn" type="button" data-scan="fermer">Annuler</button>
+    <button class="btn" type="button" data-scan="lampe" id="btn-lampe" hidden>Lampe</button>
+    <button class="btn" type="button" data-scan="photo">Photographier le code</button>
+    <input type="file" id="isbn-photo" accept="image/*" capture="environment" hidden>
     <button class="btn primary" type="button" data-scan="manuel">Saisir à la main</button>
   </div>
 </div>
@@ -657,6 +660,7 @@ label .opt{font-weight:400;color:var(--faint)}
     photo: null,     // image compressée, en attente d'envoi
     compte: null,    // { email, anonyme } issu de la session
     modeCompte: "inscription",
+    dernierIsbn: null,
     occupe: false
   };
 
@@ -1401,7 +1405,7 @@ label .opt{font-weight:400;color:var(--faint)}
               '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331" style="flex:1 1 130px;width:auto">' +
               '<button type="button" class="btn ghost" data-scan="ouvrir">Scanner</button>' +
             "</div>" +
-            '<p class="aide-scan">Scannez le code-barres au dos du livre : le titre et l\'auteur se remplissent seuls.</p></div>' +
+            '<p class="aide-scan">Scannez le code-barres au dos du livre, ou tapez les 13 chiffres : le titre et l\'auteur se remplissent seuls.</p></div>' +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
           '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
@@ -1559,6 +1563,14 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var fp = document.getElementById("d-photo");
     if (fp) fp.addEventListener("change", onPhotoChoisie);
+
+    // Le scan n'est pas toujours possible : une saisie manuelle correcte
+    // déclenche la même recherche, sans bouton supplémentaire.
+    var fi = document.getElementById("d-isbn");
+    if (fi) fi.addEventListener("input", function () {
+      var n = normaliserIsbn(fi.value);
+      if (n && n !== state.dernierIsbn) { state.dernierIsbn = n; remplirDepuisIsbn(n); }
+    });
     if (state.photo) apercuPhoto();
 
     renderStatus();
@@ -1714,7 +1726,8 @@ label .opt{font-weight:400;color:var(--faint)}
     return null;
   }
 
-  var scan = { flux: null, lecteur: null, boucle: null, actif: false, minuteur: null };
+  var scan = { flux: null, piste: null, lecteur: null, boucle: null,
+               actif: false, minuteur: null, toile: null, lampe: false };
 
   function texteScan(msg, detail) {
     var el = document.getElementById("scanner-texte");
@@ -1726,6 +1739,12 @@ label .opt{font-weight:400;color:var(--faint)}
     if (scan.minuteur) { clearTimeout(scan.minuteur); scan.minuteur = null; }
     if (scan.boucle) { cancelAnimationFrame(scan.boucle); scan.boucle = null; }
     if (scan.lecteur) { try { scan.lecteur.reset(); } catch (e) {} scan.lecteur = null; }
+    if (scan.piste && scan.lampe) {
+      try { scan.piste.applyConstraints({ advanced: [{ torch: false }] }).catch(function () {}); } catch (e) {}
+    }
+    scan.lampe = false; scan.piste = null;
+    var bl = document.getElementById("btn-lampe");
+    if (bl) { bl.hidden = true; bl.textContent = "Lampe"; }
     if (scan.flux) { scan.flux.getTracks().forEach(function (t) { t.stop(); }); scan.flux = null; }
     var v = document.getElementById("scanner-video");
     if (v) v.srcObject = null;
@@ -1744,6 +1763,7 @@ label .opt{font-weight:400;color:var(--faint)}
     fermerScanner();
     var champ = document.getElementById("d-isbn");
     if (champ) champ.value = isbn;
+    state.dernierIsbn = isbn;
     remplirDepuisIsbn(isbn);
   }
 
@@ -1780,8 +1800,54 @@ label .opt{font-weight:400;color:var(--faint)}
       var m = String(e && e.name);
       if (m === "NotAllowedError")     texteScan("Accès à la caméra refusé.", "Autorisez la caméra dans les réglages du navigateur, puis réessayez.");
       else if (m === "NotFoundError")  texteScan("Aucune caméra trouvée.", "Saisissez l'ISBN à la main.");
-      else                             texteScan("Le scan n'a pas pu démarrer.", "Saisissez l'ISBN à la main.");
+      else                             texteScan("Le scan en direct n'a pas pu démarrer.", "Utilisez « Photographier le code », ou saisissez l'ISBN à la main.");
     });
+  }
+
+  // Sur iPhone, le flux vidéo de Safari est souvent peu net et sa mise au
+  // point mal maîtrisable. L'appareil photo natif, lui, produit une image
+  // pleine résolution et parfaitement nette : on décode celle-là.
+  function decoderImage(fichier) {
+    texteScan("Lecture de la photo…");
+    var url = URL.createObjectURL(fichier);
+    var img = new Image();
+
+    img.onload = function () {
+      var fini = function (codes) {
+        URL.revokeObjectURL(url);
+        var isbn = extraireIsbn(codes || []);
+        if (isbn) { codesLus([isbn]); return; }
+        texteScan("Code non reconnu sur cette photo.",
+          "Cadrez le code-barres seul, bien à plat, sans reflet — ou saisissez l'ISBN à la main.");
+      };
+
+      if ("BarcodeDetector" in window) {
+        new window.BarcodeDetector({ formats: ["ean_13", "ean_8"] })
+          .detect(img)
+          .then(function (r) { fini((r || []).map(function (c) { return c.rawValue; })); })
+          .catch(function () { fini([]); });
+        return;
+      }
+
+      chargerZXing().then(function () {
+        var Z = window.ZXing, indices = new Map();
+        indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8]);
+        indices.set(Z.DecodeHintType.TRY_HARDER, true);
+        var lecteur = new Z.BrowserMultiFormatReader(indices);
+        var essai;
+        try { essai = lecteur.decodeFromImageElement(img); }
+        catch (e) { essai = Promise.reject(e); }
+        Promise.resolve(essai)
+          .then(function (r) { fini(r ? [r.getText()] : []); })
+          .catch(function () { fini([]); });
+      }).catch(function () { fini([]); });
+    };
+
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      texteScan("Image illisible.", "Réessayez, ou saisissez l'ISBN à la main.");
+    };
+    img.src = url;
   }
 
   function viserEtPatienter() {
@@ -1791,24 +1857,79 @@ label .opt{font-weight:400;color:var(--faint)}
     // l'élève insister dans le vide.
     scan.minuteur = setTimeout(function () {
       if (scan.actif) texteScan("Toujours rien ?",
-        "Éloignez le livre d'une vingtaine de centimètres, cherchez un meilleur éclairage, ou saisissez l'ISBN à la main.");
+        "Couverture brillante : inclinez le livre pour chasser le reflet. Tenez-le à 15-20 cm, bien à plat, et laissez la mise au point se faire. Sinon, saisissez l'ISBN à la main.");
     }, 10000);
+  }
+
+  // La résolution par défaut d'une caméra web est souvent 640x480 :
+  // beaucoup trop faible pour les barres serrées d'un EAN-13. On demande
+  // du 1920 et une mise au point continue, sans quoi les couvertures
+  // pelliculées restent floues.
+  function ouvrirCamera(video) {
+    return navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: "environment" },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    }).then(function (flux) {
+      scan.flux = flux;
+      video.srcObject = flux;
+      var piste = flux.getVideoTracks()[0];
+      scan.piste = piste;
+
+      // Réglages avancés : ils échouent silencieusement là où ils
+      // n'existent pas, d'où le catch vide.
+      try {
+        piste.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(function () {});
+      } catch (e) {}
+
+      var cap = piste.getCapabilities ? piste.getCapabilities() : {};
+      if (cap && cap.torch) {
+        var b = document.getElementById("btn-lampe");
+        if (b) b.hidden = false;
+      }
+      return video.play();
+    });
+  }
+
+  function basculerLampe() {
+    if (!scan.piste) return;
+    scan.lampe = !scan.lampe;
+    scan.piste.applyConstraints({ advanced: [{ torch: scan.lampe }] })
+      .then(function () {
+        var b = document.getElementById("btn-lampe");
+        if (b) b.textContent = scan.lampe ? "Éteindre" : "Lampe";
+        if (scan.lampe) texteScan("Lampe allumée.",
+          "Sur une couverture brillante, elle crée parfois un reflet : éteignez-la si la lecture ne vient pas.");
+      })
+      .catch(function () { toast("Cet appareil ne permet pas d'allumer la lampe."); });
+  }
+
+  // On ne décode que le contenu du cadre, agrandi : le décodeur reçoit
+  // ainsi plus de pixels utiles et moins de décor.
+  function imageDuViseur(video) {
+    var vl = video.videoWidth, vh = video.videoHeight;
+    if (!vl || !vh) return null;
+    var lRel = 0.86, hRel = 0.34;              // proportions du cadre
+    var sl = vl * lRel, sh = vh * hRel;
+    var sx = (vl - sl) / 2, sy = (vh - sh) / 2;
+    var c = scan.toile || (scan.toile = document.createElement("canvas"));
+    c.width = Math.round(sl); c.height = Math.round(sh);
+    c.getContext("2d", { willReadFrequently: true })
+     .drawImage(video, sx, sy, sl, sh, 0, 0, c.width, c.height);
+    return c;
   }
 
   function scanNatif(video) {
     // ean_13 encode l'ISBN ; ean_8 couvre quelques éditions anciennes.
     var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "ean_8"] });
-    return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-      .then(function (flux) {
-        scan.flux = flux;
-        video.srcObject = flux;
-        return video.play();
-      })
+    return ouvrirCamera(video)
       .then(function () {
         viserEtPatienter();
         function tour() {
           if (!scan.actif) return;
-          detecteur.detect(video)
+          detecteur.detect(imageDuViseur(video) || video)
             .then(function (codes) {
               if (codes && codes.length) {
                 codesLus(codes.map(function (c) { return c.rawValue; }));
@@ -1829,9 +1950,16 @@ label .opt{font-weight:400;color:var(--faint)}
     indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8]);
     indices.set(Z.DecodeHintType.TRY_HARDER, true);
     scan.lecteur = new Z.BrowserMultiFormatReader(indices);
-    viserEtPatienter();
-    return scan.lecteur.decodeFromVideoDevice(null, video, function (resultat) {
-      if (resultat) codesLus([resultat.getText()]);
+    // On ouvre nous-mêmes la caméra pour imposer la haute résolution et
+    // la mise au point continue, puis on laisse le décodeur travailler
+    // sur cet élément vidéo.
+    return ouvrirCamera(video).then(function () {
+      viserEtPatienter();
+      var rappel = function (resultat) { if (resultat) codesLus([resultat.getText()]); };
+      if (typeof scan.lecteur.decodeFromVideoElement === "function") {
+        return scan.lecteur.decodeFromVideoElement(video, rappel);
+      }
+      return scan.lecteur.decodeFromVideoDevice(null, video, rappel);
     });
   }
 
@@ -1948,8 +2076,16 @@ label .opt{font-weight:400;color:var(--faint)}
     var b = ev.target.closest("[data-scan]");
     if (!b) return;
     var quoi = b.getAttribute("data-scan");
+    if (quoi === "lampe") { basculerLampe(); return; }
+    if (quoi === "photo") { var f = document.getElementById("isbn-photo"); if (f) f.click(); return; }
     fermerScanner();
     if (quoi === "manuel") { var i = document.getElementById("d-isbn"); if (i) i.focus(); }
+  });
+
+  document.getElementById("isbn-photo").addEventListener("change", function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (f) decoderImage(f);
   });
 
   document.getElementById("visionneuse").addEventListener("click", fermerPhoto);
