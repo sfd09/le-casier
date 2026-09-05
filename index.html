@@ -282,6 +282,31 @@ label .opt{font-weight:400;color:var(--faint)}
 }
 .vignette:hover .loupe,.vignette:focus-within .loupe{opacity:1}
 
+.scanner{
+  position:fixed;inset:0;z-index:95;background:#0A0E18;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.scanner[hidden]{display:none!important}
+.scanner video{
+  width:100%;max-width:560px;max-height:64vh;object-fit:cover;
+  border-radius:12px;background:#000;
+}
+.viseur{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(78%,420px);height:130px;pointer-events:none;
+  border:2px solid rgba(255,255,255,.85);border-radius:10px;
+  box-shadow:0 0 0 2000px rgba(10,14,24,.45);
+}
+.scanner-texte{
+  color:#fff;font-size:14px;font-weight:500;margin:20px 0 0;
+  text-align:center;padding:0 24px;max-width:420px;line-height:1.45;
+}
+.scanner-texte small{display:block;color:rgba(255,255,255,.6);font-size:12px;margin-top:6px}
+.scanner-actions{display:flex;gap:9px;margin-top:18px;flex-wrap:wrap;justify-content:center}
+.scanner-actions .btn{background:rgba(255,255,255,.14);color:#fff;border:0}
+.scanner-actions .btn:hover{background:rgba(255,255,255,.24)}
+.scanner-actions .btn.primary{background:var(--accent);color:#fff}
+
 .visionneuse{
   position:fixed;inset:0;z-index:90;
   background:rgba(10,14,24,.92);
@@ -304,6 +329,7 @@ label .opt{font-weight:400;color:var(--faint)}
 .visionneuse .chargement{color:#fff;font-size:13px;opacity:.8}
 
 .photo-champ{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+.aide-scan{margin:7px 0 0;font-size:12px;color:var(--faint);line-height:1.4}
 .photo-etat{font-size:13px;color:var(--muted)}
 .photo-apercu{
   margin-top:11px;max-width:230px;border-radius:8px;overflow:hidden;
@@ -556,6 +582,16 @@ label .opt{font-weight:400;color:var(--faint)}
 </div>
 
 <div class="toast" id="toast" hidden></div>
+
+<div class="scanner" id="scanner" role="dialog" aria-modal="true" aria-label="Scanner un code-barres" hidden>
+  <video id="scanner-video" playsinline muted></video>
+  <div class="viseur" id="viseur"></div>
+  <p class="scanner-texte" id="scanner-texte">Placez le code-barres du livre dans le cadre.<small>Il est au dos, sous le prix.</small></p>
+  <div class="scanner-actions">
+    <button class="btn" type="button" data-scan="fermer">Annuler</button>
+    <button class="btn primary" type="button" data-scan="manuel">Saisir à la main</button>
+  </div>
+</div>
 
 <div class="visionneuse" id="visionneuse" role="dialog" aria-modal="true" aria-label="Photo agrandie" hidden>
   <button class="fermer" type="button" data-fermer>Fermer</button>
@@ -1361,7 +1397,11 @@ label .opt{font-weight:400;color:var(--faint)}
           '<div><label for="d-niv">Niveau <span class="opt">(si concerné)</span></label><select id="d-niv">' + nivs + "</select></div>" +
           '<div><label for="d-etat">État</label><select id="d-etat">' + ets + "</select></div>" +
           '<div><label for="d-isbn">ISBN <span class="opt">(livres)</span></label>' +
-            '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331"></div>' +
+            '<div class="photo-champ">' +
+              '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331" style="flex:1 1 130px;width:auto">' +
+              '<button type="button" class="btn ghost" data-scan="ouvrir">Scanner</button>' +
+            "</div>" +
+            '<p class="aide-scan">Scannez le code-barres au dos du livre : le titre et l\'auteur se remplissent seuls.</p></div>' +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
           '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
@@ -1627,6 +1667,201 @@ label .opt{font-weight:400;color:var(--faint)}
     });
   }
 
+  /* ---------------- scan de l'ISBN ---------------- */
+
+  // Un ISBN-13 porte une clé de contrôle. La vérifier évite d'agir sur
+  // une lecture erronée : un code mal lu est rejeté au lieu de lancer
+  // une recherche sur un livre qui n'existe pas.
+  function isbnValide(code) {
+    var c = String(code || "").replace(/[^0-9]/g, "");
+    if (c.length !== 13) return false;
+    var somme = 0;
+    for (var i = 0; i < 12; i++) somme += (+c[i]) * (i % 2 ? 3 : 1);
+    return (10 - (somme % 10)) % 10 === +c[12];
+  }
+
+  var scan = { flux: null, lecteur: null, boucle: null, actif: false };
+
+  function texteScan(msg, detail) {
+    var el = document.getElementById("scanner-texte");
+    if (el) el.innerHTML = esc(msg) + (detail ? "<small>" + esc(detail) + "</small>" : "");
+  }
+
+  function fermerScanner() {
+    scan.actif = false;
+    if (scan.boucle) { cancelAnimationFrame(scan.boucle); scan.boucle = null; }
+    if (scan.lecteur) { try { scan.lecteur.reset(); } catch (e) {} scan.lecteur = null; }
+    if (scan.flux) { scan.flux.getTracks().forEach(function (t) { t.stop(); }); scan.flux = null; }
+    var v = document.getElementById("scanner-video");
+    if (v) v.srcObject = null;
+    document.getElementById("scanner").hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  function codeLu(code) {
+    if (!scan.actif) return;
+    var c = String(code).replace(/[^0-9]/g, "");
+    if (!isbnValide(c)) { texteScan("Code illisible, continuez à viser.", "Ce n'est pas un ISBN valide."); return; }
+    fermerScanner();
+    var champ = document.getElementById("d-isbn");
+    if (champ) champ.value = c;
+    remplirDepuisIsbn(c);
+  }
+
+  // Chrome et Android savent lire un code-barres nativement. Safari non :
+  // on ne charge la bibliothèque (330 ko) que dans ce cas, et seulement
+  // au moment où l'élève appuie sur « Scanner ».
+  function chargerZXing() {
+    if (window.ZXing) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var sc = document.createElement("script");
+      sc.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+      sc.onload = res;
+      sc.onerror = function () { rej(new Error("bibliothèque indisponible")); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  function ouvrirScanner() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast("Cet appareil ne permet pas le scan. Saisissez l'ISBN à la main.");
+      return;
+    }
+    var boite = document.getElementById("scanner");
+    var video = document.getElementById("scanner-video");
+    boite.hidden = false;
+    document.body.style.overflow = "hidden";
+    scan.actif = true;
+    texteScan("Ouverture de la caméra…");
+
+    var natif = "BarcodeDetector" in window;
+    var demarrage = natif ? scanNatif(video) : chargerZXing().then(function () { return scanZXing(video); });
+
+    demarrage.catch(function (e) {
+      var m = String(e && e.name);
+      if (m === "NotAllowedError")     texteScan("Accès à la caméra refusé.", "Autorisez la caméra dans les réglages du navigateur, puis réessayez.");
+      else if (m === "NotFoundError")  texteScan("Aucune caméra trouvée.", "Saisissez l'ISBN à la main.");
+      else                             texteScan("Le scan n'a pas pu démarrer.", "Saisissez l'ISBN à la main.");
+    });
+  }
+
+  function scanNatif(video) {
+    var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "isbn_13" in window ? "isbn_13" : "ean_13"] });
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+      .then(function (flux) {
+        scan.flux = flux;
+        video.srcObject = flux;
+        return video.play();
+      })
+      .then(function () {
+        texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+        function tour() {
+          if (!scan.actif) return;
+          detecteur.detect(video)
+            .then(function (codes) {
+              if (codes && codes.length) codeLu(codes[0].rawValue);
+            })
+            .catch(function () {})
+            .then(function () { if (scan.actif) scan.boucle = requestAnimationFrame(tour); });
+        }
+        scan.boucle = requestAnimationFrame(tour);
+      });
+  }
+
+  function scanZXing(video) {
+    scan.lecteur = new window.ZXing.BrowserMultiFormatReader();
+    texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+    return scan.lecteur.decodeFromVideoDevice(null, video, function (resultat) {
+      if (resultat) codeLu(resultat.getText());
+    });
+  }
+
+  /* ---------------- recherche du livre ---------------- */
+
+  var MOTS_MATIERE = [
+    [/math|alg[eè]bre|g[eé]om[eé]trie|analyse/i, "Mathématiques"],
+    [/physique|chimie/i, "Physique-Chimie"],
+    [/\bsvt\b|biolog|g[eé]olog|sciences de la vie/i, "SVT"],
+    [/histoire|g[eé]ograph/i, "Histoire-Géo"],
+    [/\bses\b|[eé]conomi|sociolog/i, "SES"],
+    [/philosoph/i, "Philosophie"],
+    [/anglais|espagnol|allemand|italien|langue/i, "Langues"],
+    [/\bnsi\b|informatique|num[eé]rique|python/i, "NSI"],
+    [/fran[cç]ais|litt[eé]rature|po[eè]sie|th[eé][aâ]tre/i, "Français"]
+  ];
+  var MOTS_NIVEAU = [
+    [/terminale|\bterm\b/i, "Terminale"],
+    [/premi[eè]re|\b1re\b/i, "Première"],
+    [/seconde|\b2de\b/i, "Seconde"],
+    [/pr[eé]pa|sup\b|maths sup/i, "Prépa"]
+  ];
+  function deviner(regles, texte) {
+    for (var i = 0; i < regles.length; i++) if (regles[i][0].test(texte)) return regles[i][1];
+    return "";
+  }
+
+  function chercherGoogle(isbn) {
+    return fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.totalItems || !d.items) return null;
+        var v = d.items[0].volumeInfo || {};
+        if (!v.title) return null;
+        return {
+          titre: v.subtitle ? v.title + " — " + v.subtitle : v.title,
+          auteur: (v.authors || []).join(", ") || v.publisher || "",
+          source: "Google Books"
+        };
+      })
+      .catch(function () { return null; });
+  }
+
+  function chercherOpenLibrary(isbn) {
+    return fetch("https://openlibrary.org/api/books?bibkeys=ISBN:" + isbn + "&format=json&jscmd=data")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        var v = d && d["ISBN:" + isbn];
+        if (!v || !v.title) return null;
+        return {
+          titre: v.title,
+          auteur: (v.authors || []).map(function (a) { return a.name; }).join(", ") ||
+                  (v.publishers || []).map(function (p) { return p.name; }).join(", ") || "",
+          source: "Open Library"
+        };
+      })
+      .catch(function () { return null; });
+  }
+
+  // Le scan reste utile même quand aucun catalogue ne connaît le livre :
+  // l'ISBN est rempli sans faute de frappe, et l'élève complète le reste.
+  function remplirDepuisIsbn(isbn) {
+    toast("ISBN " + isbn + " — recherche du livre…");
+    chercherGoogle(isbn)
+      .then(function (r) { return r || chercherOpenLibrary(isbn); })
+      .then(function (r) {
+        if (!r) {
+          toast("Livre inconnu des catalogues. L'ISBN est rempli, complétez le titre.");
+          var t = document.getElementById("d-titre");
+          if (t) t.focus();
+          return;
+        }
+        var champ = function (id) { return document.getElementById(id); };
+        if (champ("d-titre") && !champ("d-titre").value) champ("d-titre").value = r.titre;
+        if (champ("d-auteur") && !champ("d-auteur").value) champ("d-auteur").value = r.auteur;
+
+        var texte = r.titre + " " + r.auteur;
+        var mat = deviner(MOTS_MATIERE, texte);
+        var niv = deviner(MOTS_NIVEAU, texte);
+        if (mat && champ("d-mat")) champ("d-mat").value = mat;
+        if (niv && champ("d-niv")) champ("d-niv").value = niv;
+        if (champ("d-cat")) {
+          champ("d-cat").value = /manuel|[eé]dition scolaire|programme|bordas|nathan|hachette|magnard|hatier|belin|delagrave/i.test(texte)
+            ? "manuel" : "lecture";
+        }
+        toast("Trouvé : " + r.titre.slice(0, 40) + " — vérifiez et complétez.");
+      });
+  }
+
   /* ---------------- visionneuse ---------------- */
 
   function ouvrirPhoto(chemin) {
@@ -1650,9 +1885,19 @@ label .opt{font-weight:400;color:var(--faint)}
     document.body.style.overflow = "";
   }
 
+  document.getElementById("scanner").addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-scan]");
+    if (!b) return;
+    var quoi = b.getAttribute("data-scan");
+    fermerScanner();
+    if (quoi === "manuel") { var i = document.getElementById("d-isbn"); if (i) i.focus(); }
+  });
+
   document.getElementById("visionneuse").addEventListener("click", fermerPhoto);
   document.addEventListener("keydown", function (ev) {
-    if (ev.key === "Escape" && !document.getElementById("visionneuse").hidden) fermerPhoto();
+    if (ev.key !== "Escape") return;
+    if (!document.getElementById("scanner").hidden) { fermerScanner(); return; }
+    if (!document.getElementById("visionneuse").hidden) fermerPhoto();
   });
 
   /* ---------------- évènements ---------------- */
@@ -1675,6 +1920,15 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var sc = ev.target.closest("[data-scan]");
+    if (sc) {
+      var quoi = sc.getAttribute("data-scan");
+      if (quoi === "ouvrir") ouvrirScanner();
+      else if (quoi === "fermer") fermerScanner();
+      else if (quoi === "manuel") { fermerScanner(); var i = document.getElementById("d-isbn"); if (i) i.focus(); }
+      return;
+    }
 
     var ag = ev.target.closest("[data-agrandir]");
     if (ag) { ouvrirPhoto(ag.getAttribute("data-agrandir")); return; }
