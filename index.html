@@ -418,6 +418,27 @@ label .opt{font-weight:400;color:var(--faint)}
 .onboard .row > div{flex:1 1 150px}
 .onboard label{color:var(--muted)}
 
+.compte-bascule{
+  display:flex;gap:2px;background:var(--surface);border:1px solid var(--line);
+  border-radius:9px;padding:3px;margin:0 0 16px;align-self:flex-start;
+}
+.compte-bascule button{
+  appearance:none;border:0;cursor:pointer;font:inherit;font-size:13px;font-weight:600;
+  background:none;color:var(--muted);padding:7px 15px;border-radius:7px;white-space:nowrap;
+}
+.compte-bascule button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.compte-champs{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:13px}
+.compte-champs .full{grid-column:1/-1}
+.domaine{
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  background:var(--accent-soft);padding:2px 7px;border-radius:5px;
+}
+.deconnexion{
+  appearance:none;border:0;background:none;cursor:pointer;font:inherit;
+  font-size:11px;color:var(--faint);text-decoration:underline;padding:0;margin-left:2px;
+}
+.deconnexion:hover{color:var(--alert)}
+
 /* ---------- le projet ---------- */
 .prose{max-width:66ch}
 .prose h3{font-family:"Fraunces",Georgia,serif;font-size:16px;font-weight:600;margin:22px 0 7px}
@@ -560,7 +581,10 @@ label .opt{font-weight:400;color:var(--faint)}
     moiId: null,     // identifiant anonyme de cet appareil
     pret: false,
     horsLigne: null,
-    photo: null      // image compressée, en attente d'envoi
+    photo: null,     // image compressée, en attente d'envoi
+    compte: null,    // { email, anonyme } issu de la session
+    modeCompte: "inscription",
+    occupe: false
   };
 
   function esc(s) {
@@ -747,15 +771,121 @@ label .opt{font-weight:400;color:var(--faint)}
       res[0].data.forEach(function (x) { m[x.id] = x; });
       state.membres = m;
       state.objets = res[1].data.map(depuisBase);
-      if (state.moiId && m[state.moiId]) {
-        state.me = { pseudo: m[state.moiId].pseudo, classe: m[state.moiId].classe || "", cle: state.moiId };
-      }
+      state.me = (state.moiId && m[state.moiId])
+        ? { pseudo: m[state.moiId].pseudo, classe: m[state.moiId].classe || "", cle: state.moiId }
+        : null;
       state.horsLigne = null;
       render();
     });
   }
 
   /* ---------------- actions ---------------- */
+
+  var DOMAINE = "monlycee.net";
+
+  function estConnecte() { return !!(state.compte && !state.compte.anonyme); }
+
+  var ERREURS_AUTH = [
+    ["Inscription réservée", "Utilisez votre adresse @" + DOMAINE + " du lycée."],
+    ["already registered",   "Cette adresse a déjà un compte. Choisissez « J'ai déjà un compte »."],
+    ["User already",         "Cette adresse a déjà un compte. Choisissez « J'ai déjà un compte »."],
+    ["Invalid login",        "Adresse ou mot de passe incorrect."],
+    ["at least 6",           "Le mot de passe doit faire au moins 6 caractères."],
+    ["Password should",      "Le mot de passe doit faire au moins 6 caractères."],
+    ["Email rate limit",     "Trop de tentatives. Attendez quelques minutes."],
+    // Sur la conversion d'un compte anonyme, Supabase masque l'exception
+    // du déclencheur et renvoie ce message opaque. Dans notre base, la
+    // seule cause possible est le domaine refusé.
+    ["Error confirm email",  "Adresse refusée. Utilisez votre adresse @" + DOMAINE + " du lycée."]
+  ];
+  function messageAuth(e) {
+    var t = String((e && (e.message || e.error_description)) || "");
+    for (var i = 0; i < ERREURS_AUTH.length; i++) {
+      if (t.indexOf(ERREURS_AUTH[i][0]) !== -1) return ERREURS_AUTH[i][1];
+    }
+    return messageErreur(e);
+  }
+
+  function relireSession() {
+    return state.sb.auth.getSession().then(function (r) {
+      var u = r.data && r.data.session ? r.data.session.user : null;
+      state.moiId = u ? u.id : null;
+      state.compte = u ? { email: u.email || "", anonyme: !u.email } : null;
+      return u;
+    });
+  }
+
+  // Inscription. Si l'appareil a déjà une session anonyme, on la CONVERTIT
+  // au lieu d'en créer une seconde : l'identifiant ne change pas, donc les
+  // annonces et les crédits déjà accumulés sont conservés.
+  function bonDomaine(email) {
+    return String(email || "").toLowerCase().split("@")[1] === DOMAINE;
+  }
+
+  function inscrire(email, motdepasse, pseudo, classe) {
+    if (state.occupe) return;
+    // Contrôle immédiat, pour ne pas faire attendre un aller-retour réseau
+    // sur une erreur évidente. La vraie barrière reste dans la base.
+    if (!bonDomaine(email)) {
+      toast("Inscription réservée aux élèves : utilisez votre adresse @" + DOMAINE + ".");
+      return;
+    }
+    state.occupe = true; render();
+
+    var suite;
+    if (state.compte && state.compte.anonyme) {
+      suite = state.sb.auth.updateUser({ email: email, password: motdepasse })
+        .then(function (r) { if (r.error) throw r.error; });
+    } else {
+      suite = state.sb.auth.signUp({ email: email, password: motdepasse })
+        .then(function (r) { if (r.error) throw r.error; });
+    }
+
+    suite
+      .then(relireSession)
+      .then(function () { return rpc("creer_membre", { p_pseudo: pseudo, p_classe: classe || "" }); })
+      .then(charger)
+      .then(function () {
+        state.occupe = false; render();
+        toast("Compte créé. Vous vous retrouverez sur tous vos appareils.");
+      })
+      .catch(function (e) {
+        state.occupe = false; render();
+        toast(messageAuth(e));
+      });
+  }
+
+  function connecter(email, motdepasse) {
+    if (state.occupe) return;
+    state.occupe = true; render();
+
+    state.sb.auth.signInWithPassword({ email: email, password: motdepasse })
+      .then(function (r) { if (r.error) throw r.error; })
+      .then(relireSession)
+      .then(charger)
+      .then(function () {
+        state.occupe = false;
+        state.onglet = "catalogue";
+        render();
+        toast(state.me ? "Bonjour " + state.me.pseudo + "." : "Connexion réussie.");
+      })
+      .catch(function (e) {
+        state.occupe = false; render();
+        toast(messageAuth(e));
+      });
+  }
+
+  function deconnecter() {
+    state.sb.auth.signOut()
+      .then(function () {
+        state.me = null; state.compte = null; state.moiId = null;
+        return state.sb.auth.signInAnonymously();
+      })
+      .then(relireSession)
+      .then(charger)
+      .then(function () { toast("Déconnecté."); })
+      .catch(function () { location.reload(); });
+  }
 
   function creerCompte(pseudo, classe) {
     rpc("creer_membre", { p_pseudo: pseudo, p_classe: classe || "" })
@@ -839,32 +969,98 @@ label .opt{font-weight:400;color:var(--faint)}
     el.style.display = "";
     var m = moiMembre() || { credits: 0, dons: 0 };
     el.innerHTML =
-      '<div class="who"><b>' + esc(state.me.pseudo) + "</b><span>" + esc(state.me.classe || "—") + "</span></div>" +
+      '<div class="who"><b>' + esc(state.me.pseudo) + "</b><span>" + esc(state.me.classe || "—") +
+        (estConnecte() ? ' <button class="deconnexion" data-act="deconnexion">quitter</button>' : "") +
+        "</span></div>" +
       ((m.dons || 0) > 0 ? '<div class="dons" title="Objets donnés"><b>' + m.dons + "</b><span>dons</span></div>" : "") +
       '<div class="credits"><b>' + (m.credits || 0) + "</b><span>crédits</span></div>";
   }
 
   function renderOnboard() {
     var el = document.getElementById("onboard");
+
+    // Trois situations : pas encore de compte, compte sans pseudo, ou tout est en place.
     if (state.me) { el.innerHTML = ""; return; }
+    if (!state.sb || !state.compte) { el.innerHTML = ""; return; }
+
+    if (estConnecte()) { el.innerHTML = formulairePseudo(); brancherPseudo(); return; }
+
+    var inscription = state.modeCompte === "inscription";
     el.innerHTML =
       '<div class="onboard">' +
-        "<h2>Choisissez votre pseudo</h2>" +
-        "<p>Un pseudo et une classe suffisent — pas de nom de famille, pas d'adresse, pas de téléphone. " +
-        "Vous démarrez avec 2 crédits pour pouvoir prendre un objet en troc avant d'en avoir déposé un.</p>" +
-        '<form class="row" id="f-onboard">' +
-          '<div><label for="o-pseudo">Pseudo</label>' +
-            '<input id="o-pseudo" required maxlength="20" placeholder="Nawel" autocomplete="off"></div>' +
-          '<div><label for="o-classe">Classe</label>' +
-            '<input id="o-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>' +
-          '<button class="btn primary" type="submit">Entrer</button>' +
+        '<div class="compte-bascule" role="group">' +
+          '<button data-compte="inscription" aria-pressed="' + inscription + '">Créer mon compte</button>' +
+          '<button data-compte="connexion" aria-pressed="' + (!inscription) + '">J\'ai déjà un compte</button>' +
+        "</div>" +
+        (inscription
+          ? "<h2>Créer votre compte</h2><p>Réservé aux élèves du lycée : votre adresse " +
+            '<span class="domaine">@' + DOMAINE + "</span>. " +
+            "Un seul compte, que vous retrouverez sur le téléphone comme sur les ordinateurs du CDI. " +
+            "Votre adresse ne s'affiche nulle part dans l'application — les autres élèves ne voient que votre pseudo.</p>"
+          : "<h2>Se connecter</h2><p>Retrouvez votre pseudo, vos crédits et vos annonces, " +
+            "sur n'importe quel appareil.</p>") +
+        '<form id="f-compte">' +
+          '<div class="compte-champs">' +
+            '<div class="full"><label for="c-email">Adresse du lycée</label>' +
+              '<input id="c-email" type="email" required autocomplete="email" ' +
+              'placeholder="prenom.nom@' + DOMAINE + '"></div>' +
+            '<div><label for="c-mdp">Mot de passe</label>' +
+              '<input id="c-mdp" type="password" required minlength="6" ' +
+              'autocomplete="' + (inscription ? "new-password" : "current-password") + '" ' +
+              'placeholder="6 caractères minimum"></div>' +
+            (inscription
+              ? '<div><label for="c-pseudo">Pseudo</label>' +
+                  '<input id="c-pseudo" required maxlength="20" placeholder="Nawel" autocomplete="off"></div>' +
+                '<div><label for="c-classe">Classe</label>' +
+                  '<input id="c-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>'
+              : "") +
+          "</div>" +
+          '<div style="margin-top:16px">' +
+            '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
+              (state.occupe ? "Un instant…" : (inscription ? "Créer mon compte" : "Se connecter")) +
+            "</button>" +
+          "</div>" +
         "</form>" +
       "</div>";
-    document.getElementById("f-onboard").addEventListener("submit", function (ev) {
+
+    document.getElementById("f-compte").addEventListener("submit", function (ev) {
       ev.preventDefault();
-      var p = document.getElementById("o-pseudo").value.trim();
+      var email = document.getElementById("c-email").value.trim().toLowerCase();
+      var mdp = document.getElementById("c-mdp").value;
+      if (state.modeCompte === "inscription") {
+        var pseudo = document.getElementById("c-pseudo").value.trim();
+        if (!pseudo) return;
+        inscrire(email, mdp, pseudo, document.getElementById("c-classe").value.trim());
+      } else {
+        connecter(email, mdp);
+      }
+    });
+  }
+
+  // Cas rare : le compte existe mais le pseudo n'a pas été enregistré.
+  function formulairePseudo() {
+    return '<div class="onboard">' +
+      "<h2>Il ne manque que votre pseudo</h2>" +
+      "<p>Votre compte est créé. Choisissez le nom sous lequel les autres élèves vous verront — " +
+      "pas votre nom de famille.</p>" +
+      '<form class="row" id="f-pseudo">' +
+        '<div><label for="p-pseudo">Pseudo</label>' +
+          '<input id="p-pseudo" required maxlength="20" placeholder="Nawel" autocomplete="off"></div>' +
+        '<div><label for="p-classe">Classe</label>' +
+          '<input id="p-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>' +
+        '<button class="btn primary" type="submit">Valider</button>' +
+      "</form>" +
+    "</div>";
+  }
+
+  function brancherPseudo() {
+    var f = document.getElementById("f-pseudo");
+    if (!f) return;
+    f.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var p = document.getElementById("p-pseudo").value.trim();
       if (!p) return;
-      creerCompte(p, document.getElementById("o-classe").value.trim());
+      creerCompte(p, document.getElementById("p-classe").value.trim());
     });
   }
 
@@ -1035,8 +1231,10 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function vueDeposer() {
     if (!state.me) {
-      return '<div class="panel"><h2>Choisissez d\'abord un pseudo</h2>' +
-        '<p class="sub">Le formulaire apparaît une fois votre pseudo enregistré, en haut de la page.</p></div>';
+      return '<div class="panel"><h2>Créez votre compte pour déposer</h2>' +
+        '<p class="sub">Le catalogue est consultable librement, mais déposer ou réserver ' +
+        'demande un compte — c\'est ce qui permet de savoir à qui rendre le livre. ' +
+        'Le formulaire est en haut de la page, il prend trente secondes.</p></div>';
     }
 
     var cats = "";
@@ -1119,7 +1317,7 @@ label .opt{font-weight:400;color:var(--faint)}
   function vueMes() {
     if (!state.me) {
       return '<div class="panel"><h2>Aucun échange pour l\'instant</h2>' +
-        '<p class="sub">Choisissez un pseudo en haut de la page pour commencer.</p></div>';
+        '<p class="sub">Créez votre compte en haut de la page pour déposer et réserver.</p></div>';
     }
     var deposes = state.objets.filter(function (o) { return o.proprietaireCle === state.me.cle; });
     var pris = state.objets.filter(function (o) {
@@ -1353,6 +1551,10 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- évènements ---------------- */
 
+  document.getElementById("balance").addEventListener("click", function (ev) {
+    if (ev.target.closest('[data-act="deconnexion"]')) deconnecter();
+  });
+
   document.getElementById("tabs").addEventListener("click", function (ev) {
     var b = ev.target.closest("[data-tab]");
     if (!b) return;
@@ -1367,6 +1569,9 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var cp = ev.target.closest("[data-compte]");
+    if (cp) { state.modeCompte = cp.getAttribute("data-compte"); render(); return; }
 
     var ph = ev.target.closest("[data-photo]");
     if (ph) {
@@ -1390,6 +1595,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "reset") { state.filtre = { q: "", mode: "", cat: "", niveau: "" }; render(); }
     else if (act === "aller-catalogue") { state.onglet = "catalogue"; render(); }
     else if (act === "aller-depot") { state.onglet = "deposer"; render(); }
+    else if (act === "deconnexion") deconnecter();
   });
 
   /* ---------------- démarrage ---------------- */
@@ -1427,15 +1633,17 @@ label .opt{font-weight:400;color:var(--faint)}
     // sans e-mail ni mot de passe. Elle sert à savoir qui dépose quoi.
     state.sb.auth.getSession()
       .then(function (r) {
-        if (r.data && r.data.session) return r.data.session;
+        // Une session anonyme permet de consulter le catalogue avant de
+        // s'inscrire ; déposer ou réserver demandera un vrai compte.
+        if (r.data && r.data.session) return null;
         return state.sb.auth.signInAnonymously().then(function (a) {
           if (a.error) throw a.error;
-          return a.data.session;
+          return null;
         });
       })
-      .then(function (session) {
-        if (!session || !session.user) throw new Error("session absente");
-        state.moiId = session.user.id;
+      .then(relireSession)
+      .then(function (u) {
+        if (!u) throw new Error("session absente");
         return charger();
       })
       .then(function () {
