@@ -488,6 +488,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
 <div class="toast" id="toast" hidden></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js"></script>
 <script>
 (function () {
   "use strict";
@@ -538,37 +539,16 @@ label .opt{font-weight:400;color:var(--faint)}
     onglet: "catalogue",
     filtre: { q: "", mode: "", cat: "", niveau: "" },
     depotMode: "don",
-    db: null,
-    dbEssaye: false
+    sb: null,        // client Supabase
+    moiId: null,     // identifiant anonyme de cet appareil
+    pret: false,
+    horsLigne: null
   };
 
-  var LOCAL_KEY = "casier.moi.v2";
-  var BIB_KEY = "casier.bibliotheque.v2";
-
-  function slug(s) {
-    return (s || "")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase().replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "").slice(0, 40) || "eleve";
-  }
   function esc(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
       .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
-  function lire() { try { return JSON.parse(localStorage.getItem(LOCAL_KEY) || "null"); } catch (e) { return null; } }
-  function ecrire(v) { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(v)); } catch (e) {} }
-  function lireBib() {
-    try {
-      var b = JSON.parse(localStorage.getItem(BIB_KEY) || "null");
-      if (b && Array.isArray(b.objets) && b.membres) return b;
-    } catch (e) {}
-    return null;
-  }
-  function sauverBib() {
-    if (state.db) return;
-    try { localStorage.setItem(BIB_KEY, JSON.stringify({ objets: state.objets, membres: state.membres })); }
-    catch (e) {}
   }
 
   var toastT = null;
@@ -613,68 +593,105 @@ label .opt{font-weight:400;color:var(--faint)}
     jade:    { pseudo: "Jade",    classe: "Term G3", credits: 2, dons: 1 }
   };
 
-  /* ---------------- accès base ---------------- */
+  /* ---------------- accès base : Supabase ---------------- */
 
-  function objetsRef() { return state.db.collection("objets"); }
-  function membreRef(cle) { return state.db.doc("membres/" + cle); }
+  var SUPABASE_URL  = "https://nprzhyvsxmuyihrqmahe.supabase.co";
+  var SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5wcnpoeXZzeG11eWlocnFtYWhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg2MTM2NTAsImV4cCI6MjEwNDE4OTY1MH0.6mIax2bPIl39It0uNRfCxYMyOkLKbWFmfALbuJGgBKQ";
 
   function moiMembre() { return state.me ? (state.membres[state.me.cle] || null) : null; }
-  function credits() { var m = moiMembre(); return m ? (m.credits || 0) : 0; }
+  function credits()   { var m = moiMembre(); return m ? (m.credits || 0) : 0; }
 
-  function majMembre(cle, patch) {
-    var c = state.membres[cle] || { pseudo: cle, classe: "", credits: 0, dons: 0 };
-    var suivant = {
-      pseudo: c.pseudo, classe: c.classe,
-      credits: Math.max(0, (c.credits || 0) + (patch.credits || 0)),
-      dons: Math.max(0, (c.dons || 0) + (patch.dons || 0))
+  // Traduit une ligne de la base vers la forme attendue par l'affichage,
+  // en résolvant les identifiants en pseudos.
+  function depuisBase(r) {
+    var pro = state.membres[r.proprietaire] || {};
+    var pre = r.preneur ? (state.membres[r.preneur] || {}) : null;
+    return {
+      id: r.id,
+      titre: r.titre, auteur: r.auteur || "", isbn: r.isbn || "",
+      cat: r.categorie, matiere: r.matiere || "", niveau: r.niveau || "",
+      etat: r.etat || "", note: r.note || "",
+      mode: r.mode, prix: Number(r.prix) || 0,
+      statut: r.statut, signale: !!r.signale, depose: r.depose_le,
+      proprietaire: pro.pseudo || "…", proprietaireCle: r.proprietaire,
+      classe: pro.classe || "",
+      reservePar: pre ? pre.pseudo : "", reserveParCle: r.preneur || "",
+      reserveParClasse: pre ? (pre.classe || "") : ""
     };
-    state.membres[cle] = suivant;
-    if (state.db) membreRef(cle).set(suivant).catch(erreurEcriture);
-    else sauverBib();
-    render();
   }
 
-  function erreurEcriture(e) {
-    var code = e && e.code;
-    if (code === "quota_exceeded") toast("Le catalogue de démonstration est plein.");
-    else if (code === "resource_exhausted") toast("Trop d'actions d'un coup. Réessayez dans un instant.");
-    else toast("L'enregistrement n'a pas abouti. Réessayez.");
+  function rpc(nom, params) {
+    return state.sb.rpc(nom, params || {}).then(function (r) {
+      if (r.error) throw r.error;
+      return Array.isArray(r.data) ? r.data[0] : r.data;
+    });
+  }
+
+  // Les fonctions SQL lèvent des exceptions en français ; on les traduit
+  // en messages utiles plutôt que d'afficher l'erreur brute.
+  var MESSAGES = [
+    ["crédits insuffisants", "Il vous faut 1 crédit. Déposez un objet en troc pour en gagner un."],
+    ["déjà réservée",        "Trop tard — quelqu'un vient de la réserver."],
+    ["introuvable",          "Cette annonce n'existe plus."],
+    ["signalée",             "Cette annonce attend une vérification."],
+    ["déjà à vous",          "C'est votre propre annonce."],
+    ["votre réservation",    "Cette réservation n'est pas la vôtre."],
+    ["autre élève",          "Cette annonce appartient à un autre élève."],
+    ["non connecté",         "Connexion perdue. Rechargez la page."],
+    ["prix_coherent",        "Une vente doit avoir un prix, un don et un troc non."],
+    ["objets_prix_check",    "Prix plafonné à " + PLAFOND_PRIX + " €."]
+  ];
+  function messageErreur(e) {
+    var t = String((e && (e.message || e.details || e.hint)) || "");
+    for (var i = 0; i < MESSAGES.length; i++) {
+      if (t.indexOf(MESSAGES[i][0]) !== -1) return MESSAGES[i][1];
+    }
+    if (/Failed to fetch|NetworkError/i.test(t)) return "Pas de connexion au serveur.";
+    return "L'opération n'a pas abouti. Réessayez.";
+  }
+  function echec(e) { toast(messageErreur(e)); }
+
+  function charger() {
+    return Promise.all([
+      state.sb.from("membres").select("*"),
+      state.sb.from("objets").select("*").order("depose_le", { ascending: false })
+    ]).then(function (res) {
+      if (res[0].error) throw res[0].error;
+      if (res[1].error) throw res[1].error;
+      var m = {};
+      res[0].data.forEach(function (x) { m[x.id] = x; });
+      state.membres = m;
+      state.objets = res[1].data.map(depuisBase);
+      if (state.moiId && m[state.moiId]) {
+        state.me = { pseudo: m[state.moiId].pseudo, classe: m[state.moiId].classe || "", cle: state.moiId };
+      }
+      state.horsLigne = null;
+      render();
+    });
   }
 
   /* ---------------- actions ---------------- */
 
   function creerCompte(pseudo, classe) {
-    var cle = slug(pseudo);
-    state.me = { pseudo: pseudo, classe: classe, cle: cle };
-    ecrire(state.me);
-    var e = state.membres[cle];
-    state.membres[cle] = {
-      pseudo: pseudo, classe: classe,
-      credits: e ? (e.credits || 0) : 2,
-      dons: e ? (e.dons || 0) : 0
-    };
-    if (state.db) membreRef(cle).set(state.membres[cle]).catch(erreurEcriture);
-    else sauverBib();
-    render();
-    toast("Bienvenue " + pseudo + " — 2 crédits pour démarrer les échanges.");
+    rpc("creer_membre", { p_pseudo: pseudo, p_classe: classe || "" })
+      .then(charger)
+      .then(function () { toast("Bienvenue " + pseudo + " — 2 crédits pour démarrer les échanges."); })
+      .catch(echec);
   }
 
   function deposer(o) {
-    o.id = Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-    o.statut = "dispo";
-    o.proprietaire = state.me.pseudo;
-    o.proprietaireCle = state.me.cle;
-    o.classe = state.me.classe;
-    o.depose = new Date().toISOString();
-    if (state.db) objetsRef().doc(o.id).set(o).catch(erreurEcriture);
-    else { state.objets.unshift(o); sauverBib(); }
-
-    if (o.mode === "troc") { majMembre(state.me.cle, { credits: 1 }); toast("Annonce publiée. +1 crédit."); }
-    else if (o.mode === "don") { render(); toast("Don publié. Merci — ça fait vivre le service."); }
-    else { render(); toast("Annonce publiée à " + prixFmt(o.prix) + ". Le règlement se fait en main propre."); }
-
-    state.onglet = "catalogue";
-    render();
+    rpc("deposer_objet", {
+      p_titre: o.titre, p_auteur: o.auteur, p_isbn: o.isbn,
+      p_categorie: o.cat, p_matiere: o.matiere, p_niveau: o.niveau,
+      p_etat: o.etat, p_note: o.note, p_mode: o.mode, p_prix: o.prix
+    }).then(function () {
+      state.onglet = "catalogue";
+      return charger();
+    }).then(function () {
+      if (o.mode === "troc")     toast("Annonce publiée. +1 crédit.");
+      else if (o.mode === "don") toast("Don publié. Merci — ça fait vivre le service.");
+      else toast("Annonce publiée à " + prixFmt(o.prix) + ". Le règlement se fait en main propre.");
+    }).catch(echec);
   }
 
   function trouver(id) {
@@ -682,72 +699,39 @@ label .opt{font-weight:400;color:var(--faint)}
     return null;
   }
 
-  function ecrireObjet(o, champs) {
-    var k;
-    for (k in champs) if (Object.prototype.hasOwnProperty.call(champs, k)) o[k] = champs[k];
-    if (state.db) objetsRef().doc(o.id).set(o).catch(erreurEcriture);
-    else sauverBib();
-    render();
-  }
-
   function reserver(id) {
     var o = trouver(id);
-    if (!o) return;
-    if (o.mode === "troc" && credits() < 1) {
-      toast("Il vous faut 1 crédit. Déposez un objet en troc pour en gagner un.");
-      return;
-    }
-    ecrireObjet(o, {
-      statut: "reserve",
-      reservePar: state.me.pseudo,
-      reserveParCle: state.me.cle,
-      reserveParClasse: state.me.classe || ""
-    });
-    if (o.mode === "troc") {
-      majMembre(state.me.cle, { credits: -1 });
-      toast("Réservé — 1 crédit débité. Retrait au CDI.");
-    } else if (o.mode === "don") {
-      toast("Réservé. Contactez " + o.proprietaire + " pour le retrait au CDI.");
-    } else {
-      toast("Réservé à " + prixFmt(o.prix) + ". Paiement en main propre, l'application n'encaisse rien.");
-    }
+    rpc("reserver_objet", { p_objet: id }).then(charger).then(function () {
+      if (!o) return;
+      if (o.mode === "troc")     toast("Réservé — 1 crédit débité. Retrait au CDI.");
+      else if (o.mode === "don") toast("Réservé. Contactez " + o.proprietaire + " pour le retrait au CDI.");
+      else toast("Réservé à " + prixFmt(o.prix) + ". Paiement en main propre, l'application n'encaisse rien.");
+    }).catch(echec);
   }
 
   function annuler(id) {
     var o = trouver(id);
-    if (!o) return;
-    ecrireObjet(o, { statut: "dispo", reservePar: "", reserveParCle: "", reserveParClasse: "" });
-    if (o.mode === "troc") { majMembre(state.me.cle, { credits: 1 }); toast("Réservation annulée. Crédit rendu."); }
-    else toast("Réservation annulée.");
+    rpc("annuler_reservation", { p_objet: id }).then(charger).then(function () {
+      toast(o && o.mode === "troc" ? "Réservation annulée. Crédit rendu." : "Réservation annulée.");
+    }).catch(echec);
   }
 
   function confirmer(id) {
     var o = trouver(id);
-    if (!o) return;
-    ecrireObjet(o, { statut: "echange" });
-    if (o.mode === "don" && o.proprietaireCle) {
-      majMembre(o.proprietaireCle, { dons: 1 });
-      toast("C'est noté. Un don de plus au compteur de " + o.proprietaire + ".");
-    } else {
-      toast("Échange confirmé.");
-    }
+    rpc("confirmer_echange", { p_objet: id }).then(charger).then(function () {
+      if (o && o.mode === "don") toast("C'est noté. Un don de plus au compteur de " + o.proprietaire + ".");
+      else toast("Échange confirmé.");
+    }).catch(echec);
   }
 
   function retirer(id) {
-    var o = trouver(id);
-    if (!o) return;
-    if (state.db) objetsRef().doc(id).delete().catch(erreurEcriture);
-    else { state.objets = state.objets.filter(function (x) { return x.id !== id; }); sauverBib(); }
-    if (o.mode === "troc" && o.statut !== "echange") majMembre(state.me.cle, { credits: -1 });
-    render();
-    toast("Annonce retirée.");
+    rpc("retirer_objet", { p_objet: id }).then(charger)
+      .then(function () { toast("Annonce retirée."); }).catch(echec);
   }
 
   function signaler(id) {
-    var o = trouver(id);
-    if (!o) return;
-    ecrireObjet(o, { signale: true, signalePar: state.me.pseudo });
-    toast("Signalé. Un adulte référent va vérifier l'annonce.");
+    rpc("signaler_objet", { p_objet: id }).then(charger)
+      .then(function () { toast("Signalé. Un adulte référent va vérifier l'annonce."); }).catch(echec);
   }
 
   /* ---------------- rendu ---------------- */
@@ -1167,13 +1151,14 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function renderStatus() {
     var el = document.getElementById("status");
-    var n = state.objets.length;
-    if (state.db) {
-      el.innerHTML = "<b>" + n + "</b> annonces · catalogue partagé en direct entre toutes les personnes qui ouvrent ce lien.";
-    } else if (state.dbEssaye) {
-      el.innerHTML = "<b>Prototype</b> · le catalogue de départ est un jeu d'exemples ; vos annonces et réservations sont conservées sur cet appareil.";
+    if (state.horsLigne) {
+      el.innerHTML = "<b>Hors ligne</b> · " + esc(state.horsLigne) +
+        " — les annonces affichées sont des exemples.";
+    } else if (state.pret) {
+      el.innerHTML = "<b>" + state.objets.length + "</b> annonces · catalogue partagé, " +
+        "mis à jour en direct pour tout le lycée.";
     } else {
-      el.textContent = "Chargement du catalogue…";
+      el.textContent = "Connexion au catalogue…";
     }
   }
 
@@ -1242,52 +1227,59 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- démarrage ---------------- */
 
-  state.me = lire();
   render();
 
-  function replier() {
-    var bib = lireBib();
-    state.objets = bib ? bib.objets : EXEMPLES.slice();
-    state.membres = bib ? bib.membres : JSON.parse(JSON.stringify(EXEMPLES_MEMBRES));
-    if (state.me && !state.membres[state.me.cle]) {
-      state.membres[state.me.cle] = { pseudo: state.me.pseudo, classe: state.me.classe, credits: 2, dons: 0 };
-    }
-    sauverBib();
+  // Si le serveur est injoignable, l'application reste consultable avec
+  // le jeu d'exemples plutôt que d'afficher une page vide.
+  function replier(raison) {
+    state.pret = false;
+    state.horsLigne = raison || "serveur injoignable";
+    state.membres = JSON.parse(JSON.stringify(EXEMPLES_MEMBRES));
+    state.objets = EXEMPLES.slice();
+    state.me = null;
     render();
   }
 
-  var pont = (window.claude && window.claude.use)
-    ? window.claude.use("db")
-    : Promise.resolve(null);
+  function ecouterChangements() {
+    state.sb.channel("casier")
+      .on("postgres_changes", { event: "*", schema: "public", table: "objets" },
+          function () { charger().catch(function () {}); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "membres" },
+          function () { charger().catch(function () {}); })
+      .subscribe();
+  }
 
-  pont.then(function (db) {
-    state.dbEssaye = true;
-    if (!db) { replier(); return; }
-    state.db = db;
+  function demarrer() {
+    if (typeof supabase === "undefined" || !supabase.createClient) {
+      replier("bibliothèque cliente non chargée");
+      return;
+    }
+    state.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-    db.collection("objets").onSnapshot(function (snap) {
-      state.objets = snap.docs.map(function (d) {
-        var o = d.data() || {};
-        o.id = d.id;
-        return o;
-      }).sort(function (a, b) {
-        return String(b.depose || "").localeCompare(String(a.depose || ""));
-      });
-      render();
-    }, function () { state.db = null; replier(); });
+    // Connexion anonyme : chaque appareil reçoit une identité stable,
+    // sans e-mail ni mot de passe. Elle sert à savoir qui dépose quoi.
+    state.sb.auth.getSession()
+      .then(function (r) {
+        if (r.data && r.data.session) return r.data.session;
+        return state.sb.auth.signInAnonymously().then(function (a) {
+          if (a.error) throw a.error;
+          return a.data.session;
+        });
+      })
+      .then(function (session) {
+        if (!session || !session.user) throw new Error("session absente");
+        state.moiId = session.user.id;
+        return charger();
+      })
+      .then(function () {
+        state.pret = true;
+        ecouterChangements();
+        render();
+      })
+      .catch(function (e) { replier(messageErreur(e)); });
+  }
 
-    db.collection("membres").onSnapshot(function (snap) {
-      var m = {};
-      snap.docs.forEach(function (d) { m[d.id] = d.data() || {}; });
-      state.membres = m;
-      if (state.me && !m[state.me.cle]) {
-        membreRef(state.me.cle).set({
-          pseudo: state.me.pseudo, classe: state.me.classe, credits: 2, dons: 0
-        }).catch(function () {});
-      }
-      render();
-    }, function () {});
-  }).catch(function () { state.dbEssaye = true; replier(); });
+  demarrer();
 })();
 </script>
 
