@@ -2042,7 +2042,9 @@ label .opt{font-weight:400;color:var(--faint)}
   /* ---------------- recherche du livre ---------------- */
 
   var MOTS_MATIERE = [
-    [/math|alg[eè]bre|g[eé]om[eé]trie|analyse/i, "Mathématiques"],
+    // « analyse » seul est trop courant — « analyse critique » d'une œuvre
+    // n'a rien de mathématique.
+    [/math[eé]matiq|alg[eè]bre|g[eé]om[eé]trie|arithm[eé]tiq|\banalyse math/i, "Mathématiques"],
     [/physique|chimie/i, "Physique-Chimie"],
     [/\bsvt\b|biolog|g[eé]olog|sciences de la vie/i, "SVT"],
     [/histoire|g[eé]ograph/i, "Histoire-Géo"],
@@ -2079,6 +2081,70 @@ label .opt{font-weight:400;color:var(--faint)}
             ? "renseigné par " + f.saisies + " élèves du lycée"
             : "renseigné par un élève du lycée"
         };
+      })
+      .catch(function () { return null; });
+  }
+
+  // 2. Le SUDOC, catalogue des bibliothèques universitaires françaises.
+  //    C'est la source qui connaît l'édition parascolaire et de prépa —
+  //    Ellipses, Vuibert, Dunod — que les catalogues internationaux
+  //    ignorent. Deux appels : l'ISBN donne un numéro de notice, la
+  //    notice donne la description.
+  // Coupe sur un mot entier plutôt qu'au milieu : « Lionel Vid » n'aide
+  // personne.
+  function couper(t, n) {
+    t = String(t || "").trim();
+    if (t.length <= n) return t;
+    var court = t.slice(0, n);
+    var esp = court.lastIndexOf(" ");
+    return (esp > n * 0.6 ? court.slice(0, esp) : court).replace(/[,;:\s]+$/, "") + "…";
+  }
+
+  // Le SUDOC écrit « Cédric Roux,... avec la collaboration de X,...Y ».
+  // On garde le premier auteur et on jette l'appareil bibliographique.
+  function nettoyerAuteur(t) {
+    return String(t || "")
+      .replace(/\s+/g, " ")
+      .split(/\s*;\s*/)[0]
+      .split(/\s*,?\s*avec (?:la collaboration|le concours|la participation)/i)[0]
+      .replace(/^(par|sous la direction de|dir\.)\s+/i, "")
+      .replace(/,\.\.\./g, "")
+      .replace(/\.\.\./g, "")
+      .replace(/[,;:.\s]+$/, "")
+      .trim();
+  }
+
+  function chercherSudoc(isbn) {
+    return fetch("https://www.sudoc.fr/services/isbn2ppn/" + isbn)
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (xml) {
+        if (!xml) return null;
+        var m = xml.match(/<ppn>([0-9Xx]+)<\/ppn>/);
+        if (!m) return null;
+        return fetch("https://www.sudoc.fr/" + m[1] + ".rdf")
+          .then(function (r) { return r.ok ? r.text() : null; });
+      })
+      .then(function (rdf) {
+        if (!rdf) return null;
+        var doc = new DOMParser().parseFromString(rdf, "application/xml");
+        var lire = function (tag) {
+          var n = doc.getElementsByTagName(tag)[0];
+          return n && n.textContent ? n.textContent.trim() : "";
+        };
+        var brut = lire("dc:title");
+        if (!brut) return null;
+
+        // Le SUDOC écrit « Titre : sous-titre / Auteur,... » avec des
+        // espaces doublés : on sépare et on nettoie.
+        var parts = brut.split(" / ");
+        var titre = parts[0].replace(/\s+/g, " ").replace(/\s+:/g, " :").trim();
+        var auteur = nettoyerAuteur(lire("dc:creator") || parts[1] || "");
+        if (!auteur) {
+          var ed = lire("dc:publisher");
+          if (ed) auteur = ed.split(":").pop().split(",")[0].trim();
+        }
+        if (!titre) return null;
+        return { titre: couper(titre, 90), auteur: couper(auteur, 60), source: "SUDOC" };
       })
       .catch(function () { return null; });
   }
@@ -2162,6 +2228,7 @@ label .opt{font-weight:400;color:var(--faint)}
     // La mémoire du lycée d'abord : instantanée, et seule à connaître
     // les manuels scolaires français.
     chercherFiche(isbn)
+      .then(function (r) { return r || chercherSudoc(isbn); })
       .then(function (r) { return r || chercherGoogle(isbn); })
       .then(function (r) { return r || chercherOpenLibrary(isbn); })
       .then(function (r) { return r || chercherBnf(isbn); })
