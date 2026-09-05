@@ -272,6 +272,37 @@ label .opt{font-weight:400;color:var(--faint)}
   font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
   color:var(--sw);opacity:.7;padding:0 10px;text-align:center;
 }
+.vignette[data-agrandir]{cursor:zoom-in}
+.vignette .loupe{
+  position:absolute;right:7px;bottom:7px;
+  background:rgba(21,29,49,.72);color:#fff;
+  font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  padding:3px 8px;border-radius:5px;opacity:0;transition:opacity .15s;
+  pointer-events:none;
+}
+.vignette:hover .loupe,.vignette:focus-within .loupe{opacity:1}
+
+.visionneuse{
+  position:fixed;inset:0;z-index:90;
+  background:rgba(10,14,24,.92);
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;cursor:zoom-out;
+}
+.visionneuse[hidden]{display:none!important}
+.visionneuse img{
+  max-width:100%;max-height:100%;
+  border-radius:10px;box-shadow:0 12px 48px rgba(0,0,0,.5);
+  background:#151D31;
+}
+.visionneuse .fermer{
+  position:absolute;top:16px;right:16px;
+  appearance:none;border:0;cursor:pointer;font:inherit;font-size:13px;font-weight:600;
+  background:rgba(255,255,255,.14);color:#fff;
+  padding:8px 15px;border-radius:8px;
+}
+.visionneuse .fermer:hover{background:rgba(255,255,255,.24)}
+.visionneuse .chargement{color:#fff;font-size:13px;opacity:.8}
+
 .photo-champ{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
 .photo-etat{font-size:13px;color:var(--muted)}
 .photo-apercu{
@@ -526,6 +557,12 @@ label .opt{font-weight:400;color:var(--faint)}
 
 <div class="toast" id="toast" hidden></div>
 
+<div class="visionneuse" id="visionneuse" role="dialog" aria-modal="true" aria-label="Photo agrandie" hidden>
+  <button class="fermer" type="button" data-fermer>Fermer</button>
+  <span class="chargement" id="visionneuse-attente">Chargement…</span>
+  <img id="visionneuse-image" alt="">
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js"></script>
 <script>
 (function () {
@@ -655,7 +692,7 @@ label .opt{font-weight:400;color:var(--faint)}
       etat: r.etat || "", note: r.note || "",
       mode: r.mode, prix: Number(r.prix) || 0,
       statut: r.statut, signale: !!r.signale, depose: r.depose_le,
-      photo: r.photo || "",
+      photo: r.photo || "", photoMin: r.photo_min || "",
       proprietaire: pro.pseudo || "…", proprietaireCle: r.proprietaire,
       classe: pro.classe || "",
       reservePar: pre ? pre.pseudo : "", reserveParCle: r.preneur || "",
@@ -667,50 +704,78 @@ label .opt{font-weight:400;color:var(--faint)}
     return SUPABASE_URL + "/storage/v1/object/public/photos/" + chemin;
   }
 
-  // Une photo de téléphone pèse 3 à 5 Mo. On la redimensionne et on la
-  // recompresse AVANT l'envoi : sans cela, un dépôt en 4G prendrait une
-  // minute et le quota de stockage serait consommé en quelques semaines.
-  var PHOTO_MAX_PX = 1200;
-  var PHOTO_QUALITE = 0.72;
+  // Une photo de téléphone pèse 3 à 5 Mo. On produit DEUX images avant
+  // l'envoi : une vignette pour la grille et l'image pleine pour
+  // l'agrandissement. Servir la pleine dans des cases de 230 px
+  // transportait six fois trop de données à chaque consultation.
+  var PLEINE_PX   = 1200, PLEINE_Q  = 0.72;
+  var VIGNETTE_L  = 500,  VIGNETTE_H = 375, VIGNETTE_Q = 0.70;
 
-  function compresser(fichier) {
-    function dessiner(source, l, h) {
-      var r = Math.min(1, PHOTO_MAX_PX / Math.max(l, h));
-      var c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(l * r));
-      c.height = Math.max(1, Math.round(h * r));
-      c.getContext("2d").drawImage(source, 0, 0, c.width, c.height);
-      return new Promise(function (res, rej) {
-        c.toBlob(function (b) { b ? res(b) : rej(new Error("compression impossible")); },
-                 "image/jpeg", PHOTO_QUALITE);
-      });
-    }
-
+  function versBitmap(fichier) {
     // createImageBitmap respecte l'orientation EXIF : sans lui, les photos
     // prises en portrait sur iPhone arrivent couchées.
     if (window.createImageBitmap) {
       return createImageBitmap(fichier, { imageOrientation: "from-image" })
-        .then(function (bmp) {
-          return dessiner(bmp, bmp.width, bmp.height).then(function (b) {
-            if (bmp.close) bmp.close();
-            return b;
-          });
-        })
-        .catch(function () { return viaImage(fichier, dessiner); });
+        .catch(function () { return viaImage(fichier); });
     }
-    return viaImage(fichier, dessiner);
+    return viaImage(fichier);
   }
 
-  function viaImage(fichier, dessiner) {
+  function viaImage(fichier) {
     return new Promise(function (res, rej) {
       var url = URL.createObjectURL(fichier);
       var img = new Image();
-      img.onload = function () {
-        dessiner(img, img.naturalWidth, img.naturalHeight).then(res, rej);
-        URL.revokeObjectURL(url);
-      };
+      img.onload = function () { URL.revokeObjectURL(url); res(img); };
       img.onerror = function () { URL.revokeObjectURL(url); rej(new Error("image illisible")); };
       img.src = url;
+    });
+  }
+
+  function dimensions(src) {
+    return { l: src.naturalWidth || src.width, h: src.naturalHeight || src.height };
+  }
+
+  function versBlob(canvas, q) {
+    return new Promise(function (res, rej) {
+      canvas.toBlob(function (b) { b ? res(b) : rej(new Error("compression impossible")); },
+                    "image/jpeg", q);
+    });
+  }
+
+  // Réduit sans recadrer : l'image pleine garde ses proportions.
+  function reduire(src, maxPx, q) {
+    var d = dimensions(src);
+    var r = Math.min(1, maxPx / Math.max(d.l, d.h));
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(d.l * r));
+    c.height = Math.max(1, Math.round(d.h * r));
+    c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    return versBlob(c, q);
+  }
+
+  // Recadre au centre en 4/3, le format des cases du catalogue : recadrer
+  // à l'envoi évite de transporter des pixels que l'affichage rogne.
+  function recadrer(src, L, H, q) {
+    var d = dimensions(src);
+    var vise = L / H, actuel = d.l / d.h;
+    var sl, sh, sx, sy;
+    if (actuel > vise) { sh = d.h; sl = d.h * vise; sx = (d.l - sl) / 2; sy = 0; }
+    else               { sl = d.l; sh = d.l / vise; sx = 0; sy = (d.h - sh) / 2; }
+    var c = document.createElement("canvas");
+    c.width = L; c.height = H;
+    c.getContext("2d").drawImage(src, sx, sy, sl, sh, 0, 0, L, H);
+    return versBlob(c, q);
+  }
+
+  function preparerImages(fichier) {
+    return versBitmap(fichier).then(function (src) {
+      return Promise.all([
+        reduire(src, PLEINE_PX, PLEINE_Q),
+        recadrer(src, VIGNETTE_L, VIGNETTE_H, VIGNETTE_Q)
+      ]).then(function (r) {
+        if (src.close) src.close();
+        return { pleine: r[0], mini: r[1] };
+      });
     });
   }
 
@@ -719,14 +784,18 @@ label .opt{font-weight:400;color:var(--faint)}
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
 
-  function televerser(blob) {
-    var chemin = state.moiId + "/" + identifiant() + ".jpg";
+  function envoyer(chemin, blob) {
     return state.sb.storage.from("photos")
       .upload(chemin, blob, { contentType: "image/jpeg", upsert: false })
-      .then(function (r) {
-        if (r.error) throw r.error;
-        return chemin;
-      });
+      .then(function (r) { if (r.error) throw r.error; return chemin; });
+  }
+
+  function televerser(images) {
+    var base = state.moiId + "/" + identifiant();
+    return Promise.all([
+      envoyer(base + ".jpg", images.pleine),
+      envoyer(base + "_min.jpg", images.mini)
+    ]).then(function (c) { return { photo: c[0], photo_min: c[1] }; });
   }
 
   function rpc(nom, params) {
@@ -899,7 +968,7 @@ label .opt{font-weight:400;color:var(--faint)}
       p_titre: o.titre, p_auteur: o.auteur, p_isbn: o.isbn,
       p_categorie: o.cat, p_matiere: o.matiere, p_niveau: o.niveau,
       p_etat: o.etat, p_note: o.note, p_mode: o.mode, p_prix: o.prix,
-      p_photo: o.photo || null
+      p_photo: o.photo || null, p_photo_min: o.photoMin || null
     }).then(function () {
       state.photo = null;
       state.onglet = "catalogue";
@@ -945,8 +1014,11 @@ label .opt{font-weight:400;color:var(--faint)}
     var o = trouver(id);
     // La photo part en premier : le stockage n'accepte cette suppression
     // que de son propriétaire, et l'annonce en porte seule le chemin.
-    var prealable = (o && o.photo)
-      ? state.sb.storage.from("photos").remove([o.photo]).catch(function () {})
+    var fichiers = [];
+    if (o && o.photo) fichiers.push(o.photo);
+    if (o && o.photoMin) fichiers.push(o.photoMin);
+    var prealable = fichiers.length
+      ? state.sb.storage.from("photos").remove(fichiers).catch(function () {})
       : Promise.resolve();
 
     prealable
@@ -1142,9 +1214,11 @@ label .opt{font-weight:400;color:var(--faint)}
 
     return (
       '<article class="obj' + cls + '" style="--sw:' + couleur + '">' +
-        '<div class="vignette">' +
+        '<div class="vignette"' + (o.photo ? ' data-agrandir="' + esc(o.photo) + '" title="Agrandir"' : "") + ">" +
           (o.photo
-            ? '<img src="' + esc(urlPhoto(o.photo)) + '" alt="" loading="lazy" decoding="async">'
+            ? '<img src="' + esc(urlPhoto(o.photoMin || o.photo)) + '" alt="Photo de ' +
+              esc(o.titre) + '" loading="lazy" decoding="async">' +
+              '<span class="loupe" aria-hidden="true">agrandir</span>'
             : "<span>" + esc(catNom(o.cat)) + "</span>") +
         "</div>" +
         '<div class="obj-head"><h3>' + esc(o.titre) + "</h3>" + pill + "</div>" +
@@ -1297,7 +1371,10 @@ label .opt{font-weight:400;color:var(--faint)}
                 (state.photo ? "Changer la photo" : "Prendre une photo") + "</button>" +
               (state.photo ? '<button type="button" class="btn ghost" data-photo="retirer">Retirer</button>' : "") +
               '<span class="photo-etat" id="photo-etat">' +
-                (state.photo ? Math.round(state.photo.size / 1024) + " ko, prête à l\'envoi" : "Aucune photo") +
+                (state.photo
+                  ? "Prête : vignette " + Math.round(state.photo.mini.size / 1024) +
+                    " ko, photo " + Math.round(state.photo.pleine.size / 1024) + " ko"
+                  : "Aucune photo") +
               "</span>" +
             "</div>" +
             '<div class="photo-apercu" id="photo-apercu"' + (state.photo ? "" : ' hidden') + "></div>" +
@@ -1482,7 +1559,7 @@ label .opt{font-weight:400;color:var(--faint)}
   function apercuPhoto() {
     var box = document.getElementById("photo-apercu");
     if (!box || !state.photo) return;
-    var url = URL.createObjectURL(state.photo);
+    var url = URL.createObjectURL(state.photo.mini);
     box.innerHTML = '<img src="' + url + '" alt="Aperçu de la photo">';
     box.hidden = false;
     box.firstChild.onload = function () { URL.revokeObjectURL(url); };
@@ -1496,11 +1573,11 @@ label .opt{font-weight:400;color:var(--faint)}
     var etat = document.getElementById("photo-etat");
     if (etat) etat.textContent = "Compression…";
 
-    compresser(f).then(function (blob) {
-      state.photo = blob;
+    preparerImages(f).then(function (images) {
+      state.photo = images;
       render();
       toast("Photo prête : " + Math.round(f.size / 1024) + " ko réduits à " +
-            Math.round(blob.size / 1024) + " ko.");
+            Math.round(images.mini.size / 1024) + " ko pour le catalogue.");
     }).catch(function () {
       state.photo = null;
       render();
@@ -1541,13 +1618,42 @@ label .opt{font-weight:400;color:var(--faint)}
     if (!state.photo) { deposer(champs); return; }
 
     toast("Envoi de la photo…");
-    televerser(state.photo).then(function (chemin) {
-      champs.photo = chemin;
+    televerser(state.photo).then(function (chemins) {
+      champs.photo = chemins.photo;
+      champs.photoMin = chemins.photo_min;
       deposer(champs);
     }).catch(function () {
       toast("La photo n'a pas pu être envoyée. Réessayez, ou publiez sans photo.");
     });
   }
+
+  /* ---------------- visionneuse ---------------- */
+
+  function ouvrirPhoto(chemin) {
+    var boite = document.getElementById("visionneuse");
+    var img = document.getElementById("visionneuse-image");
+    var attente = document.getElementById("visionneuse-attente");
+    img.style.display = "none";
+    attente.hidden = false;
+    img.onload = function () { attente.hidden = true; img.style.display = ""; };
+    img.onerror = function () { attente.textContent = "Photo indisponible."; };
+    img.src = urlPhoto(chemin);   // la pleine résolution, chargée seulement ici
+    boite.hidden = false;
+    document.body.style.overflow = "hidden";
+    document.querySelector("#visionneuse .fermer").focus();
+  }
+
+  function fermerPhoto() {
+    var boite = document.getElementById("visionneuse");
+    boite.hidden = true;
+    document.getElementById("visionneuse-image").src = "";
+    document.body.style.overflow = "";
+  }
+
+  document.getElementById("visionneuse").addEventListener("click", fermerPhoto);
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !document.getElementById("visionneuse").hidden) fermerPhoto();
+  });
 
   /* ---------------- évènements ---------------- */
 
@@ -1569,6 +1675,9 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var ag = ev.target.closest("[data-agrandir]");
+    if (ag) { ouvrirPhoto(ag.getAttribute("data-agrandir")); return; }
 
     var cp = ev.target.closest("[data-compte]");
     if (cp) { state.modeCompte = cp.getAttribute("data-compte"); render(); return; }
