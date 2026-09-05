@@ -1,9 +1,11 @@
 // Service worker du Casier.
-// Strategie : le reseau d'abord pour la page (une mise a jour est donc
-// visible des le rechargement suivant), le cache d'abord pour ce qui ne
-// bouge pas (icones, polices). L'application reste utilisable hors ligne.
+//
+// Règle cardinale : ne JAMAIS mettre en cache les appels à la base.
+// Ce sont des données vivantes ; les cacher fige le catalogue sur la
+// première réponse reçue, définitivement. Seuls les fichiers de
+// l'application — qui ne changent qu'à une publication — sont cachés.
 
-const VERSION = "casier-v1";
+const VERSION = "casier-v2";
 const COQUILLE = [
   "./",
   "./index.html",
@@ -34,7 +36,18 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
 
-  // La page elle-meme : reseau d'abord, cache en secours si hors ligne.
+  let url;
+  try { url = new URL(req.url); } catch (_) { return; }
+
+  const memeOrigine = url.origin === self.location.origin;
+  const police = url.hostname === "fonts.googleapis.com" || url.hostname === "fonts.gstatic.com";
+
+  // Tout le reste part au réseau sans interception : la base Supabase,
+  // les photos, la bibliothèque cliente. Aucune donnée vivante en cache.
+  if (!memeOrigine && !police) return;
+
+  // La page : réseau d'abord, pour qu'une publication soit visible tout
+  // de suite ; le cache ne sert que hors ligne.
   if (req.mode === "navigate") {
     e.respondWith(
       fetch(req)
@@ -48,7 +61,7 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Le reste : cache d'abord, puis reseau, et on garde une copie.
+  // Fichiers de l'application et polices : cache d'abord.
   e.respondWith(
     caches.match(req).then((cache) => {
       if (cache) return cache;
