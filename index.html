@@ -1868,6 +1868,15 @@ label .opt{font-weight:400;color:var(--faint)}
     scan.journal = []; scan.images = 0; scan.vus = [];
     var natif = "BarcodeDetector" in window;
     noter(natif ? "natif" : "bibliotheque");
+
+    var bp = document.querySelector('[data-scan="photo"]');
+    if (bp && !natif) {
+      // Safari ne donne aux pages qu'un flux vidéo bridé : l'appareil
+      // photo natif reste le chemin fiable, on le propose en premier.
+      bp.className = "btn primary";
+      bp.textContent = "Photographier le code";
+      bp.parentNode.insertBefore(bp, bp.parentNode.firstChild);
+    }
     var demarrage = natif ? scanNatif(video) : chargerZXing().then(function () { return scanZXing(video); });
 
     demarrage.catch(function (e) {
@@ -1882,46 +1891,140 @@ label .opt{font-weight:400;color:var(--faint)}
   // Sur iPhone, le flux vidéo de Safari est souvent peu net et sa mise au
   // point mal maîtrisable. L'appareil photo natif, lui, produit une image
   // pleine résolution et parfaitement nette : on décode celle-là.
+  // ---- Décodage d'une photo fixe ----
+  // Contrairement à un flux vidéo, une photo laisse le temps d'insister :
+  // on essaie plusieurs cadrages, plusieurs contrastes, plusieurs
+  // orientations, avec deux moteurs différents. C'est ce qui rapproche le
+  // résultat de celui d'une application native.
+
+  function chargerQuagga() {
+    if (window.Quagga) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var sc = document.createElement("script");
+      sc.src = "https://cdn.jsdelivr.net/npm/@ericblade/quagga2@1.8.4/dist/quagga.min.js";
+      sc.onload = res;
+      sc.onerror = function () { rej(new Error("quagga indisponible")); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  // Réduit l'image : un cliché de 12 Mpx est trop grand pour les
+  // décodeurs, qui travaillent mieux entre 1000 et 1600 points.
+  function variante(img, largeurMax, recadre, rotation, contraste) {
+    var l = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    var sx = 0, sy = 0, sl = l, sh = h;
+    if (recadre < 1) {
+      sl = l * recadre; sh = h * recadre;
+      sx = (l - sl) / 2; sy = (h - sh) / 2;
+    }
+    var r = Math.min(1, largeurMax / Math.max(sl, sh));
+    var dl = Math.round(sl * r), dh = Math.round(sh * r);
+
+    var c = document.createElement("canvas");
+    var g = c.getContext("2d", { willReadFrequently: true });
+    if (rotation) { c.width = dh; c.height = dl; g.translate(dh / 2, dl / 2); g.rotate(Math.PI / 2); g.translate(-dl / 2, -dh / 2); }
+    else { c.width = dl; c.height = dh; }
+    g.drawImage(img, sx, sy, sl, sh, 0, 0, dl, dh);
+
+    if (contraste) {
+      var d = g.getImageData(0, 0, c.width, c.height), p = d.data;
+      for (var i = 0; i < p.length; i += 4) {
+        var gris = (p[i] * 0.299 + p[i + 1] * 0.587 + p[i + 2] * 0.114);
+        var v = gris > 128 ? Math.min(255, (gris - 128) * 2.2 + 128)
+                           : Math.max(0, (gris - 128) * 2.2 + 128);
+        p[i] = p[i + 1] = p[i + 2] = v;
+      }
+      g.putImageData(d, 0, 0);
+    }
+    return c;
+  }
+
+  function essayerNatif(c) {
+    if (!("BarcodeDetector" in window)) return Promise.resolve([]);
+    return new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code"] })
+      .detect(c)
+      .then(function (r) { return (r || []).map(function (x) { return x.rawValue; }); })
+      .catch(function () { return []; });
+  }
+
+  function essayerZXing(c) {
+    if (!window.ZXing) return Promise.resolve([]);
+    try {
+      var Z = window.ZXing;
+      var g = c.getContext("2d", { willReadFrequently: true });
+      var d = g.getImageData(0, 0, c.width, c.height);
+      var src = new Z.RGBLuminanceSource(d.data, c.width, c.height);
+      var bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(src));
+      var h = new Map();
+      h.set(Z.DecodeHintType.POSSIBLE_FORMATS,
+            [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.QR_CODE]);
+      h.set(Z.DecodeHintType.TRY_HARDER, true);
+      var lect = new Z.MultiFormatReader();
+      lect.setHints(h);
+      return Promise.resolve([lect.decode(bmp).getText()]);
+    } catch (e) { return Promise.resolve([]); }
+  }
+
+  function essayerQuagga(c) {
+    if (!window.Quagga) return Promise.resolve([]);
+    return new Promise(function (res) {
+      try {
+        window.Quagga.decodeSingle({
+          src: c.toDataURL("image/png"),
+          numOfWorkers: 0,
+          locate: true,
+          inputStream: { size: Math.max(c.width, c.height) },
+          decoder: { readers: ["ean_reader", "ean_8_reader"] }
+        }, function (r) { res(r && r.codeResult ? [r.codeResult.code] : []); });
+      } catch (e) { res([]); }
+    });
+  }
+
   function decoderImage(fichier) {
-    texteScan("Lecture de la photo…");
+    texteScan("Lecture de la photo…", "Plusieurs traitements sont essayés, cela prend quelques secondes.");
     noter("photo " + Math.round(fichier.size / 1024) + "ko");
+
     var url = URL.createObjectURL(fichier);
     var img = new Image();
 
     img.onload = function () {
-      var fini = function (codes) {
-        URL.revokeObjectURL(url);
-        noter("photo " + img.naturalWidth + "x" + img.naturalHeight +
-              " codes:" + ((codes || []).length));
-        for (var k = 0; k < (codes || []).length; k++) {
-          if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
-        }
-        var isbn = extraireIsbn(codes || []);
-        if (isbn) { codesLus([isbn]); return; }
-        texteScan("Code non reconnu sur cette photo.",
-          "Cadrez le code-barres seul, bien à plat, sans reflet — ou saisissez l'ISBN à la main.");
-      };
+      URL.revokeObjectURL(url);
+      noter("image " + img.naturalWidth + "x" + img.naturalHeight);
 
-      if ("BarcodeDetector" in window) {
-        new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code"] })
-          .detect(img)
-          .then(function (r) { fini((r || []).map(function (c) { return c.rawValue; })); })
-          .catch(function () { fini([]); });
-        return;
-      }
+      // Du plus probable au plus coûteux.
+      var variantes = [
+        [1600, 1,    0, false], [1600, 0.55, 0, false],
+        [1200, 1,    0, true ], [1200, 0.55, 0, true ],
+        [1600, 1,    1, false], [1600, 0.55, 1, true ],
+        [900,  1,    0, false]
+      ];
 
-      chargerZXing().then(function () {
-        var Z = window.ZXing, indices = new Map();
-        indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.QR_CODE]);
-        indices.set(Z.DecodeHintType.TRY_HARDER, true);
-        var lecteur = new Z.BrowserMultiFormatReader(indices);
-        var essai;
-        try { essai = lecteur.decodeFromImageElement(img); }
-        catch (e) { essai = Promise.reject(e); }
-        Promise.resolve(essai)
-          .then(function (r) { fini(r ? [r.getText()] : []); })
-          .catch(function () { fini([]); });
-      }).catch(function () { fini([]); });
+      Promise.all([chargerZXing().catch(function () {}), chargerQuagga().catch(function () {})])
+        .then(function () {
+          var i = 0;
+          function suite() {
+            if (!variantes[i]) {
+              texteScan("Code non reconnu sur cette photo.",
+                "Cadrez le code-barres seul, bien à plat, sans reflet — ou saisissez les 13 chiffres à la main.");
+              noter("echec apres " + i + " essais");
+              return;
+            }
+            var v = variantes[i], c = variante(img, v[0], v[1], v[2], v[3]);
+            texteScan("Lecture… essai " + (i + 1) + " sur " + variantes.length);
+            essayerNatif(c)
+              .then(function (r) { return r.length ? r : essayerZXing(c); })
+              .then(function (r) { return r.length ? r : essayerQuagga(c); })
+              .then(function (codes) {
+                for (var k = 0; k < codes.length; k++) {
+                  if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
+                }
+                var isbn = extraireIsbn(codes);
+                if (isbn) { noter("trouve essai " + (i + 1)); codesLus([isbn]); return; }
+                i++; setTimeout(suite, 0);
+              });
+          }
+          suite();
+        });
     };
 
     img.onerror = function () {
@@ -1931,22 +2034,11 @@ label .opt{font-weight:400;color:var(--faint)}
     img.src = url;
   }
 
-  function afficherReleve() {
-    var boite = document.getElementById("releve");
-    var texte = releve();
-    boite.textContent = texte;
-    boite.hidden = false;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(texte)
-        .then(function () { toast("Relevé copié — collez-le dans la conversation."); })
-        .catch(function () { toast("Relevé affiché : recopiez-le ou faites une capture."); });
-    } else {
-      toast("Relevé affiché : faites une capture d'écran.");
-    }
-  }
-
   function viserEtPatienter() {
-    texteScan("Visez le code-barres ou le QR code.", "Au dos du livre. Le QR code, quand il y en a un, se lit plus facilement.");
+    texteScan("Visez le code-barres ou le QR code.",
+      ("BarcodeDetector" in window)
+        ? "Au dos du livre. Le QR code, quand il y en a un, se lit plus facilement."
+        : "Sur iPhone, « Photographier le code » donne de bien meilleurs résultats que la lecture en direct.");
     if (scan.minuteur) clearTimeout(scan.minuteur);
     // Au bout de dix secondes sans lecture, on aide au lieu de laisser
     // l'élève insister dans le vide.
