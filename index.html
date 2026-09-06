@@ -1877,7 +1877,7 @@ label .opt{font-weight:400;color:var(--faint)}
       bp.textContent = "Photographier le code";
       bp.parentNode.insertBefore(bp, bp.parentNode.firstChild);
     }
-    var demarrage = natif ? scanNatif(video) : chargerZXing().then(function () { return scanZXing(video); });
+    var demarrage = natif ? scanNatif(video) : scanZXing(video);
 
     demarrage.catch(function (e) {
       noter("ERREUR " + (e && (e.name || e.message)));
@@ -2035,6 +2035,20 @@ label .opt{font-weight:400;color:var(--faint)}
     img.src = url;
   }
 
+  function afficherReleve() {
+    var boite = document.getElementById("releve");
+    var texte = releve();
+    boite.textContent = texte;
+    boite.hidden = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texte)
+        .then(function () { toast("Relevé copié — collez-le dans la conversation."); })
+        .catch(function () { toast("Relevé affiché : recopiez-le ou faites une capture."); });
+    } else {
+      toast("Relevé affiché : faites une capture d'écran.");
+    }
+  }
+
   function viserEtPatienter() {
     texteScan("Visez le code-barres ou le QR code.",
       ("BarcodeDetector" in window)
@@ -2098,7 +2112,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // On ne décode que le contenu du cadre, agrandi : le décodeur reçoit
   // ainsi plus de pixels utiles et moins de décor.
   function imageDuViseur(video) {
-    var vl = video.videoWidth, vh = video.videoHeight;
+    var vl = video.videoWidth || video.width, vh = video.videoHeight || video.height;
     if (!vl || !vh) return null;
     var lRel = 0.86, hRel = 0.34;              // proportions du cadre
     var sl = vl * lRel, sh = vh * hRel;
@@ -2133,29 +2147,33 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function scanZXing(video) {
-    // Sans ces indications, le décodeur essaie tous les formats existants :
-    // il est plus lent et se trompe davantage. On le restreint aux codes
-    // de livre et on lui demande d'insister sur les images floues.
-    var Z = window.ZXing, indices = new Map();
-    indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.QR_CODE]);
-    indices.set(Z.DecodeHintType.TRY_HARDER, true);
-    scan.lecteur = new Z.BrowserMultiFormatReader(indices);
-    // On ouvre nous-mêmes la caméra pour imposer la haute résolution et
-    // la mise au point continue, puis on laisse le décodeur travailler
-    // sur cet élément vidéo.
-    return ouvrirCamera(video).then(function () {
-      viserEtPatienter();
-      var rappel = function (resultat) {
-        scan.images++;
-        if (resultat) { noter("code lu"); codesLus([resultat.getText()]); }
-      };
-      if (typeof scan.lecteur.decodeFromVideoElement === "function") {
-        noter("decodeFromVideoElement");
-        return scan.lecteur.decodeFromVideoElement(video, rappel);
-      }
-      noter("decodeFromVideoDevice");
-      return scan.lecteur.decodeFromVideoDevice(null, video, rappel);
-    });
+    // Même décodeur que pour les photos — celui qui a été vérifié —
+    // appliqué image par image sur le seul contenu du cadre. Avant, le
+    // direct passait par un autre point d'entrée de la bibliothèque et
+    // analysait toute l'image : le code-barres n'y pesait qu'une fraction
+    // des pixels, insuffisante à la résolution que Safari concède.
+    return Promise.all([chargerZXing(), chargerQuagga().catch(function () {})])
+      .then(function () { return ouvrirCamera(video); })
+      .then(function () {
+        viserEtPatienter();
+        noter("boucle sur le cadre");
+        var n = 0, occupe = false, dernier = 0;
+        function tour(t) {
+          if (!scan.actif) return;
+          // ~8 images par seconde : suffisant, et laisse respirer le téléphone.
+          if (occupe || (t - dernier) < 120) { scan.boucle = requestAnimationFrame(tour); return; }
+          var c = imageDuViseur(video);
+          if (!c) { scan.boucle = requestAnimationFrame(tour); return; }
+          occupe = true; dernier = t; scan.images++; n++;
+          essayerZXing(c)
+            // Quagga est plus lent : une image sur quatre, si ZXing n'a rien lu.
+            .then(function (r) { return (r.length || (n % 4)) ? r : essayerQuagga(c); })
+            .then(function (codes) { if (codes.length) { noter("code lu"); codesLus(codes); } })
+            .catch(function () {})
+            .then(function () { occupe = false; if (scan.actif) scan.boucle = requestAnimationFrame(tour); });
+        }
+        scan.boucle = requestAnimationFrame(tour);
+      });
   }
 
   /* ---------------- recherche du livre ---------------- */
