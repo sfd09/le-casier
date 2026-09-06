@@ -1951,9 +1951,10 @@ label .opt{font-weight:400;color:var(--faint)}
     if (!window.ZXing) return Promise.resolve([]);
     try {
       var Z = window.ZXing;
-      var g = c.getContext("2d", { willReadFrequently: true });
-      var d = g.getImageData(0, 0, c.width, c.height);
-      var src = new Z.RGBLuminanceSource(d.data, c.width, c.height);
+      // HTMLCanvasElementLuminanceSource convertit correctement les pixels.
+      // RGBLuminanceSource, nourri d'octets RGBA, les prenait pour du gris
+      // et ne lisait plus rien : c'était la panne sur iPhone.
+      var src = new Z.HTMLCanvasElementLuminanceSource(c);
       var bmp = new Z.BinaryBitmap(new Z.HybridBinarizer(src));
       var h = new Map();
       h.set(Z.DecodeHintType.POSSIBLE_FORMATS,
@@ -1973,7 +1974,7 @@ label .opt{font-weight:400;color:var(--faint)}
           src: c.toDataURL("image/png"),
           numOfWorkers: 0,
           locate: true,
-          inputStream: { size: Math.max(c.width, c.height) },
+          inputStream: { size: 800 },   // taille de travail fixe : Quagga échoue au-delà
           decoder: { readers: ["ean_reader", "ean_8_reader"] }
         }, function (r) { res(r && r.codeResult ? [r.codeResult.code] : []); });
       } catch (e) { res([]); }
