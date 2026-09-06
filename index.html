@@ -205,6 +205,45 @@ body{
   margin-left:5px;font-variant-numeric:tabular-nums;
 }
 
+/* ---------- navigation basse ---------- */
+.wrap{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+.navbas{
+  position:fixed;left:0;right:0;bottom:0;z-index:60;
+  background:color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+  display:flex;
+}
+.navbas button{
+  flex:1;appearance:none;background:none;border:0;cursor:pointer;font:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:9px 4px 8px;color:var(--faint);position:relative;
+}
+.navbas button svg{width:23px;height:23px;stroke:currentColor;fill:none;
+  stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.navbas span{font-size:10px;font-weight:600;letter-spacing:.01em}
+.navbas button[aria-selected="true"]{color:var(--accent)}
+.navbas .pastille{
+  position:absolute;top:5px;left:calc(50% + 7px);
+  min-width:16px;height:16px;padding:0 4px;border-radius:9px;
+  background:var(--alert);color:#fff;font-family:var(--mono);
+  font-size:10px;font-weight:600;line-height:16px;text-align:center;
+}
+.navbas .plus svg{width:27px;height:27px;stroke-width:2}
+
+@media (min-width:760px){
+  .navbas{
+    position:sticky;top:0;bottom:auto;max-width:1080px;margin:0 auto;
+    border-top:0;border-bottom:1px solid var(--line);background:none;backdrop-filter:none;
+  }
+  .navbas button{flex:0 0 auto;flex-direction:row;gap:7px;padding:12px 15px}
+  .navbas button svg{width:18px;height:18px}
+  .navbas span{font-size:13px}
+  .navbas .pastille{position:static;margin-left:2px}
+  .wrap{padding-bottom:72px}
+}
+
 /* ---------- filtres ---------- */
 .filters{padding:22px 0 6px;display:flex;flex-direction:column;gap:11px}
 .search{display:flex;gap:8px;flex-wrap:wrap}
@@ -253,21 +292,35 @@ label .opt{font-weight:400;color:var(--faint)}
 .count b{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
 .count .lbl{font-size:13px;color:var(--muted)}
 
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(164px,1fr));gap:11px}
+@media (min-width:760px){ .grid{grid-template-columns:repeat(auto-fill,minmax(208px,1fr));gap:14px} }
 
+/* La photo occupe la carte ; le texte se réduit à ce qui décide :
+   le prix ou le mode, puis le titre. Le reste attend le détail. */
 .obj{
-  position:relative;display:flex;flex-direction:column;gap:8px;
-  background:var(--surface);border:1px solid var(--line);
-  border-left:4px solid var(--sw,var(--c-autre));
-  border-radius:var(--r);padding:13px 14px 12px;
+  position:relative;display:flex;flex-direction:column;gap:7px;
+  background:none;border:0;border-radius:0;padding:0;
+  cursor:pointer;text-align:left;
 }
+.obj .vignette{
+  aspect-ratio:4/3;border-radius:11px;
+  border:1px solid var(--line);
+  box-shadow:0 1px 3px rgba(21,29,49,.06);
+}
+.obj-corps{display:flex;flex-direction:column;gap:3px;padding:0 2px}
 .obj.gone{opacity:.62}
 .vignette{
   position:relative;aspect-ratio:4/3;border-radius:7px;overflow:hidden;
   background:color-mix(in srgb,var(--sw) 9%,var(--surface-2));
   display:flex;align-items:center;justify-content:center;
 }
-.vignette img{width:100%;height:100%;object-fit:cover;display:block}
+.vignette img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.vignette .repli,.fiche-photo .repli{
+  font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--sw);opacity:.7;padding:0 10px;text-align:center;
+}
+.fiche-photo{position:relative}
+.fiche-photo img{position:absolute;inset:0}
 .vignette span{
   font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
   color:var(--sw);opacity:.7;padding:0 10px;text-align:center;
@@ -345,9 +398,21 @@ label .opt{font-weight:400;color:var(--faint)}
 .photo-apercu img{display:block;width:100%;height:auto}
 .obj-head{display:flex;gap:8px;align-items:flex-start}
 .obj h3{
-  margin:0;font-family:"Fraunces","Iowan Old Style",Georgia,serif;
-  font-size:17px;font-weight:600;line-height:1.25;letter-spacing:-.01em;
-  text-wrap:balance;flex:1;
+  margin:0;font-family:"Public Sans",sans-serif;
+  font-size:13px;font-weight:500;line-height:1.35;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.obj .prix{
+  font-family:var(--mono);font-size:15px;font-weight:600;
+  font-variant-numeric:tabular-nums;color:var(--ink);
+}
+.obj .gratuit{font-size:13px;font-weight:700;color:var(--ok);letter-spacing:.01em}
+.obj .troc{font-size:13px;font-weight:700;color:var(--accent)}
+.obj .sous{font-size:11px;color:var(--faint)}
+.obj .pastille-statut{
+  position:absolute;top:8px;left:8px;
+  background:color-mix(in srgb,var(--surface) 92%,transparent);
+  backdrop-filter:blur(6px);
 }
 .obj .auteur{margin:-3px 0 0;color:var(--muted);font-size:13px}
 .obj .note{font-size:13px;color:var(--muted);margin:0}
@@ -396,6 +461,104 @@ label .opt{font-weight:400;color:var(--faint)}
 .contact b{font-weight:700}
 .obj-actions{display:flex;gap:7px;align-items:center}
 .obj-actions .btn{flex:1}
+
+/* ---------- fiche détaillée ---------- */
+.fiche{
+  position:fixed;inset:0;z-index:70;background:var(--paper);
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+}
+.fiche[hidden]{display:none!important}
+.fiche-barre{
+  position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;
+  padding:11px 14px;background:color-mix(in srgb,var(--paper) 92%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line);
+}
+.fiche-barre .retour{
+  appearance:none;border:1px solid var(--line);background:var(--surface);
+  border-radius:9px;cursor:pointer;padding:7px 12px;font:inherit;
+  font-size:13px;font-weight:600;color:var(--ink);
+}
+.fiche-corps{max-width:640px;margin:0 auto;padding:0 14px 40px}
+.fiche-photo{
+  aspect-ratio:4/3;border-radius:12px;overflow:hidden;margin:14px 0 0;
+  background:color-mix(in srgb,var(--sw) 9%,var(--surface-2));
+  display:flex;align-items:center;justify-content:center;cursor:zoom-in;
+}
+.fiche-photo img{width:100%;height:100%;object-fit:cover}
+.fiche-photo span{font-size:11px;font-weight:600;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--sw);opacity:.7}
+.fiche h1{
+  font-family:"Fraunces",Georgia,serif;font-size:23px;font-weight:600;
+  letter-spacing:-.01em;margin:16px 0 3px;text-wrap:balance;
+}
+.fiche .auteur{margin:0 0 14px;color:var(--muted);font-size:14px}
+.fiche .valeur{
+  display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 16px;
+}
+.fiche .valeur b{font-family:var(--mono);font-size:26px;font-weight:600;
+  font-variant-numeric:tabular-nums}
+.fiche .valeur .libre{font-size:20px;font-weight:700;color:var(--ok)}
+.fiche .valeur .echange{font-size:20px;font-weight:700;color:var(--accent)}
+.fiche .valeur small{font-size:12px;color:var(--faint)}
+.fiche .note{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:13px 15px;margin:0 0 16px;font-size:14px;color:var(--muted);line-height:1.5;
+}
+.fiche .lignes{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  margin:0 0 16px;overflow:hidden;
+}
+.fiche .lignes div{
+  display:flex;justify-content:space-between;gap:14px;
+  padding:11px 15px;font-size:13px;border-bottom:1px solid var(--line);
+}
+.fiche .lignes div:last-child{border-bottom:0}
+.fiche .lignes dt{color:var(--faint)}
+.fiche .lignes dd{margin:0;color:var(--ink);font-weight:600;text-align:right}
+.fiche-actions{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 14px}
+.fiche-actions .btn{flex:1 1 150px;padding:12px 16px;font-size:14px}
+
+/* ---------- messagerie ---------- */
+.fils{display:flex;flex-direction:column;gap:9px}
+.fil{
+  display:flex;gap:12px;align-items:center;width:100%;text-align:left;
+  appearance:none;background:var(--surface);border:1px solid var(--line);
+  border-radius:11px;padding:11px 13px;cursor:pointer;font:inherit;
+}
+.fil:hover{border-color:var(--line-strong)}
+.fil .miniature{
+  width:52px;height:52px;flex:none;border-radius:8px;overflow:hidden;
+  background:color-mix(in srgb,var(--sw) 12%,var(--surface-2));
+  display:flex;align-items:center;justify-content:center;
+}
+.fil .miniature img{width:100%;height:100%;object-fit:cover}
+.fil .miniature span{font-size:9px;font-weight:700;color:var(--sw)}
+.fil .txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.fil .txt b{font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fil .txt .qui{font-size:12px;color:var(--accent);font-weight:600}
+.fil .txt .apercu{font-size:12px;color:var(--faint);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+
+.discussion{display:flex;flex-direction:column;gap:9px;padding:4px 0 14px}
+.bulle{
+  max-width:80%;padding:9px 13px;border-radius:14px;font-size:14px;line-height:1.45;
+  word-break:break-word;
+}
+.bulle.moi{align-self:flex-end;background:var(--accent);color:var(--accent-ink);
+  border-bottom-right-radius:5px}
+.bulle.lui{align-self:flex-start;background:var(--surface);border:1px solid var(--line);
+  border-bottom-left-radius:5px}
+.bulle time{display:block;font-size:10px;opacity:.65;margin-top:3px}
+.saisie{
+  position:sticky;bottom:0;display:flex;gap:8px;padding:11px 0;
+  background:color-mix(in srgb,var(--paper) 92%,transparent);backdrop-filter:blur(10px);
+}
+.saisie textarea{min-height:44px;max-height:120px;border-radius:22px;padding:11px 16px;resize:none}
+.saisie .btn{flex:none;border-radius:22px;padding:0 18px}
+.rappel-rdv{
+  background:var(--warn-soft);color:var(--warn);border-radius:9px;
+  padding:10px 13px;font-size:12px;margin:0 0 12px;line-height:1.45;
+}
 
 /* ---------- boutons ---------- */
 .btn{
@@ -582,11 +745,19 @@ label .opt{font-weight:400;color:var(--faint)}
 </header>
 
 <div class="wrap">
-  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <nav class="navbas" role="tablist" id="nav"></nav>
   <div id="onboard"></div>
   <main id="view"></main>
   <p class="status-line" id="status"></p>
 </div>
+
+<section class="fiche" id="fiche" hidden aria-label="Détail de l'annonce">
+  <div class="fiche-barre">
+    <button class="retour" type="button" data-fiche="fermer">Retour</button>
+    <strong id="fiche-titre-barre" style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></strong>
+  </div>
+  <div class="fiche-corps" id="fiche-corps"></div>
+</section>
 
 <div class="toast" id="toast" hidden></div>
 
@@ -660,6 +831,11 @@ label .opt{font-weight:400;color:var(--faint)}
     objets: [],
     membres: {},
     onglet: "catalogue",
+    fiche: null,        // annonce ouverte en plein écran
+    fils: [],           // fils de discussion me concernant
+    filOuvert: null,
+    messages: [],
+    recherches: [],
     filtre: { q: "", mode: "", cat: "", niveau: "" },
     depotMode: "don",
     sb: null,        // client Supabase
@@ -893,8 +1069,93 @@ label .opt{font-weight:400;color:var(--faint)}
         ? { pseudo: m[state.moiId].pseudo, classe: m[state.moiId].classe || "", cle: state.moiId }
         : null;
       state.horsLigne = null;
-      render();
+      return Promise.all([chargerFils(), chargerRecherches()]).then(function () { render(); });
     });
+  }
+
+  /* ---------------- fils de discussion ---------------- */
+
+  function chargerFils() {
+    if (!state.sb || !state.me) { state.fils = []; return Promise.resolve(); }
+    return state.sb.from("fils").select("*").order("maj", { ascending: false })
+      .then(function (r) {
+        if (r.error) throw r.error;
+        var fils = r.data || [];
+        if (!fils.length) { state.fils = []; return; }
+        // Un seul appel pour les derniers messages, plutôt qu'un par fil.
+        var ids = fils.map(function (f) { return f.id; });
+        return state.sb.from("messages").select("fil,auteur,texte,envoye_le")
+          .in("fil", ids).order("envoye_le", { ascending: false })
+          .then(function (m) {
+            var dernier = {};
+            (m.data || []).forEach(function (x) { if (!dernier[x.fil]) dernier[x.fil] = x; });
+            fils.forEach(function (f) {
+              var d = dernier[f.id];
+              f.apercu = d ? d.texte : "";
+              f.dernierAuteur = d ? d.auteur : null;
+            });
+            state.fils = fils;
+          });
+      })
+      .catch(function () { state.fils = []; });
+  }
+
+  function chargerMessages(filId) {
+    return state.sb.from("messages").select("*").eq("fil", filId)
+      .order("envoye_le", { ascending: true })
+      .then(function (r) { state.messages = r.error ? [] : (r.data || []); });
+  }
+
+  function ouvrirDiscussion(objetId) {
+    if (!state.me) { toast("Créez votre compte pour écrire."); return; }
+    rpc("ouvrir_fil", { p_objet: objetId })
+      .then(function (id) {
+        fermerFiche();
+        state.onglet = "messages";
+        state.filOuvert = id;
+        return chargerFils().then(function () { return chargerMessages(id); });
+      })
+      .then(function () { render(); window.scrollTo(0, 0); })
+      .catch(echec);
+  }
+
+  function envoyer(texte) {
+    if (!state.filOuvert || !texte.trim()) return;
+    rpc("envoyer_message", { p_fil: state.filOuvert, p_texte: texte })
+      .then(function () { return chargerMessages(state.filOuvert); })
+      .then(chargerFils)
+      .then(function () { render(); glisserEnBas(); })
+      .catch(echec);
+  }
+
+  function glisserEnBas() {
+    var d = document.getElementById("discussion");
+    if (d) d.scrollIntoView({ block: "end" });
+  }
+
+  /* ---------------- demandes ---------------- */
+
+  function chargerRecherches() {
+    if (!state.sb) return Promise.resolve();
+    return state.sb.from("recherches").select("*").eq("active", true)
+      .order("cree_le", { ascending: false })
+      .then(function (r) { state.recherches = r.error ? [] : (r.data || []); })
+      .catch(function () { state.recherches = []; });
+  }
+
+  function publierRecherche(champs) {
+    rpc("publier_recherche", {
+      p_titre: champs.titre, p_isbn: champs.isbn || null, p_categorie: champs.cat || null,
+      p_matiere: champs.matiere || null, p_niveau: champs.niveau || null, p_note: champs.note || null
+    }).then(chargerRecherches)
+      .then(function () { render(); toast("Demande publiée. Les élèves qui l'ont la verront."); })
+      .catch(echec);
+  }
+
+  function retirerRecherche(id) {
+    rpc("retirer_recherche", { p_id: id }).then(chargerRecherches)
+      .then(function () { render(); toast("Demande retirée."); })
+      .catch(echec);
   }
 
   /* ---------------- actions ---------------- */
@@ -1195,23 +1456,44 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function estActif(o) { return o.statut !== "echange" && !o.signale; }
 
-  function renderTabs() {
-    var dispo = state.objets.filter(function (o) { return o.statut === "dispo" && !o.signale; }).length;
-    var miens = state.me ? state.objets.filter(estAMoi).length : 0;
+  var ICONES = {
+    catalogue: '<path d="M3 9.5 12 4l9 5.5"/><path d="M5 10.5V20h14v-9.5"/><path d="M9.5 20v-5.5h5V20"/>',
+    recherches:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
+    deposer:   '<circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/>',
+    messages:  '<path d="M4 5.5h16v11H9l-5 3.5v-3.5H4z"/>',
+    moi:       '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c1.2-3.6 4-5.4 7-5.4s5.8 1.8 7 5.4"/>'
+  };
+
+  function nonLus() {
+    // Un fil compte comme « à voir » quand le dernier mot n'est pas le mien.
+    var n = 0;
+    for (var i = 0; i < state.fils.length; i++) {
+      var f = state.fils[i];
+      if (f.dernierAuteur && state.me && f.dernierAuteur !== state.me.cle) n++;
+    }
+    return n;
+  }
+
+  function renderNav() {
     var defs = [
-      { id: "catalogue", nom: "Catalogue", n: dispo },
-      { id: "deposer", nom: "Déposer", n: null },
-      { id: "mes", nom: "Mes échanges", n: miens },
-      { id: "projet", nom: "Le projet", n: null }
+      { id: "catalogue",  nom: "Catalogue" },
+      { id: "recherches", nom: "Recherchés" },
+      { id: "deposer",    nom: "Déposer", plus: true },
+      { id: "messages",   nom: "Messages", badge: nonLus() },
+      { id: "moi",        nom: "Moi" }
     ];
     var html = "";
     for (var i = 0; i < defs.length; i++) {
       var d = defs[i];
-      html += '<button class="tab" role="tab" data-tab="' + d.id + '" aria-selected="' +
-        (state.onglet === d.id) + '">' + d.nom +
-        (d.n !== null ? '<span class="n">' + d.n + "</span>" : "") + "</button>";
+      html += '<button role="tab" data-onglet="' + d.id + '" aria-selected="' +
+        (state.onglet === d.id) + '"' + (d.plus ? ' class="plus"' : "") +
+        ' aria-label="' + d.nom + '">' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICONES[d.id] + "</svg>" +
+        "<span>" + d.nom + "</span>" +
+        (d.badge ? '<i class="pastille">' + d.badge + "</i>" : "") +
+        "</button>";
     }
-    document.getElementById("tabs").innerHTML = html;
+    document.getElementById("nav").innerHTML = html;
   }
 
   function estAMoi(o) {
@@ -1227,77 +1509,134 @@ label .opt{font-weight:400;color:var(--faint)}
     return '<span class="mode troc">Troc · 1 crédit</span>';
   }
 
-  function carte(o, contexte) {
+  function valeurCourte(o) {
+    if (o.mode === "don")   return '<span class="gratuit">Gratuit</span>';
+    if (o.mode === "vente") return '<span class="prix">' + prixFmt(o.prix) + "</span>";
+    return '<span class="troc">1 crédit</span>';
+  }
+
+  // La carte ne porte que ce qui décide d'un clic : la photo, le prix ou
+  // le mode, le titre. Tout le reste attend la fiche détaillée.
+  function carte(o) {
     var couleur = sw(o.cat);
+    var cls = (o.signale || o.statut === "echange") ? " gone" : "";
+
+    var pill = "";
+    if (o.signale)                  pill = '<span class="pill signale pastille-statut">Signalé</span>';
+    else if (o.statut === "echange")pill = '<span class="pill echange pastille-statut">Terminé</span>';
+    else if (o.statut === "reserve")pill = '<span class="pill reserve pastille-statut">Réservé</span>';
+
+    return (
+      '<article class="obj' + cls + '" style="--sw:' + couleur + '" data-ouvrir="' + o.id + '" tabindex="0">' +
+        '<div class="vignette">' +
+          '<span class="repli">' + esc(catNom(o.cat)) + "</span>" +
+          (o.photo
+            ? '<img src="' + esc(urlPhoto(o.photoMin || o.photo)) + '" alt="" loading="lazy" ' +
+              'decoding="async" onerror="this.remove()">'
+            : "") +
+          pill +
+        "</div>" +
+        '<div class="obj-corps">' +
+          valeurCourte(o) +
+          "<h3>" + esc(o.titre) + "</h3>" +
+          '<span class="sous">' + esc(o.etat || catNom(o.cat)) + "</span>" +
+        "</div>" +
+      "</article>"
+    );
+  }
+
+  /* ---------------- fiche détaillée ---------------- */
+
+  function ligne(cle, valeur) {
+    return valeur ? "<div><dt>" + esc(cle) + "</dt><dd>" + esc(valeur) + "</dd></div>" : "";
+  }
+
+  function valeurLongue(o) {
+    if (o.mode === "don")
+      return '<span class="libre">Gratuit</span><small>don, sans contrepartie</small>';
+    if (o.mode === "vente")
+      return "<b>" + prixFmt(o.prix) + "</b><small>réglé en main propre, l'application n'encaisse rien</small>";
+    return '<span class="echange">1 crédit</span><small>échange</small>';
+  }
+
+  function ouvrirFiche(id) {
+    state.fiche = id;
+    renderFiche();
+    document.getElementById("fiche").hidden = false;
+    document.getElementById("fiche").scrollTop = 0;
+    document.body.style.overflow = "hidden";
+  }
+
+  function fermerFiche() {
+    state.fiche = null;
+    document.getElementById("fiche").hidden = true;
+    document.body.style.overflow = "";
+  }
+
+  function renderFiche() {
+    if (!state.fiche) return;
+    var o = trouver(state.fiche);
+    if (!o) { fermerFiche(); return; }
+
     var suisProprio = state.me && o.proprietaireCle === state.me.cle;
     var suisPreneur = state.me && o.reserveParCle === state.me.cle;
 
-    var pill, cls = "";
-    if (o.signale) { pill = '<span class="pill signale">Signalé</span>'; cls = " gone"; }
-    else if (o.statut === "echange") { pill = '<span class="pill echange">Terminé</span>'; cls = " gone"; }
-    else if (o.statut === "reserve") { pill = '<span class="pill reserve">Réservé</span>'; }
-    else { pill = '<span class="pill dispo">Dispo</span>'; }
-
     var actions = "";
-    if (state.me && !o.signale) {
-      if (o.statut === "dispo" && !suisProprio) {
-        var libelle = o.mode === "don" ? "Je le prends"
-                    : o.mode === "vente" ? "Ça m'intéresse"
-                    : "Réserver · 1 crédit";
-        var classe = o.mode === "don" ? "give" : "primary";
-        actions =
-          '<button class="btn ' + classe + '" data-act="reserver" data-id="' + o.id + '">' + libelle + "</button>" +
-          '<button class="btn icon" data-act="signaler" data-id="' + o.id + '" title="Signaler cette annonce" aria-label="Signaler cette annonce">⚑</button>';
-      } else if (o.statut === "dispo" && suisProprio) {
-        actions = '<button class="btn ghost" data-act="retirer" data-id="' + o.id + '">Retirer l\'annonce</button>';
-      } else if (o.statut === "reserve" && suisPreneur) {
-        actions =
-          '<button class="btn primary" data-act="confirmer" data-id="' + o.id + '">C\'est récupéré</button>' +
-          '<button class="btn ghost" data-act="annuler" data-id="' + o.id + '">Annuler</button>';
-      } else if (o.statut === "reserve" && suisProprio) {
-        actions = '<button class="btn ghost" disabled>En attente de ' + esc(o.reservePar || "…") + "</button>";
-      }
+    if (!state.me) {
+      actions = '<p class="note" style="margin:0">Créez votre compte pour réserver ou écrire au vendeur.</p>';
+    } else if (o.signale) {
+      actions = '<p class="note" style="margin:0">Annonce signalée, en attente de vérification.</p>';
+    } else if (suisProprio) {
+      actions = (o.statut === "dispo"
+        ? '<button class="btn ghost" data-act="retirer" data-id="' + o.id + '">Retirer l\'annonce</button>'
+        : '<button class="btn ghost" disabled>Réservé par ' + esc(o.reservePar || "…") + "</button>");
+    } else if (o.statut === "dispo") {
+      var libelle = o.mode === "don" ? "Je le prends"
+                  : o.mode === "vente" ? "Ça m'intéresse" : "Réserver · 1 crédit";
+      actions =
+        '<button class="btn ' + (o.mode === "don" ? "give" : "primary") + '" data-act="reserver" data-id="' + o.id + '">' + libelle + "</button>" +
+        '<button class="btn ghost" data-act="ecrire" data-id="' + o.id + '">Écrire à ' + esc(o.proprietaire) + "</button>";
+    } else if (suisPreneur) {
+      actions =
+        '<button class="btn primary" data-act="confirmer" data-id="' + o.id + '">C\'est récupéré</button>' +
+        '<button class="btn ghost" data-act="ecrire" data-id="' + o.id + '">Discuter du rendez-vous</button>' +
+        '<button class="btn ghost" data-act="annuler" data-id="' + o.id + '">Annuler</button>';
+    } else {
+      actions = '<button class="btn ghost" disabled>Déjà réservé</button>';
     }
 
-    // Le rendez-vous n'apparaît qu'aux deux personnes concernées.
-    var contact = "";
-    if (o.statut === "reserve" && (suisProprio || suisPreneur)) {
-      var autre = suisProprio
-        ? esc(o.reservePar) + " (" + esc(o.reserveParClasse || "classe non renseignée") + ")"
-        : esc(o.proprietaire) + " (" + esc(o.classe || "classe non renseignée") + ")";
-      contact = '<div class="contact">Rendez-vous au CDI avec <b>' + autre + "</b>" +
-        (o.mode === "vente" ? " · règlement de " + prixFmt(o.prix) + " en main propre" : "") + "</div>";
-    }
-
-    return (
-      '<article class="obj' + cls + '" style="--sw:' + couleur + '">' +
-        '<div class="vignette"' + (o.photo ? ' data-agrandir="' + esc(o.photo) + '" title="Agrandir"' : "") + ">" +
-          (o.photo
-            ? '<img src="' + esc(urlPhoto(o.photoMin || o.photo)) + '" alt="Photo de ' +
-              esc(o.titre) + '" loading="lazy" decoding="async">' +
-              '<span class="loupe" aria-hidden="true">agrandir</span>'
-            : "<span>" + esc(catNom(o.cat)) + "</span>") +
-        "</div>" +
-        '<div class="obj-head"><h3>' + esc(o.titre) + "</h3>" + pill + "</div>" +
-        (o.auteur ? '<p class="auteur">' + esc(o.auteur) + "</p>" : "") +
-        badgeMode(o) +
-        (o.note ? '<p class="note">' + esc(o.note) + "</p>" : "") +
-        (o.isbn ? '<span class="isbn">ISBN ' + esc(o.isbn) + "</span>" : "") +
-        '<div class="meta">' +
-          '<span class="tag cat">' + esc(catNom(o.cat)) + "</span>" +
-          (o.matiere ? '<span class="tag">' + esc(o.matiere) + "</span>" : "") +
-          (o.niveau ? '<span class="tag">' + esc(o.niveau) + "</span>" : "") +
-          '<span class="tag">' + esc(o.etat) + "</span>" +
-        "</div>" +
-        contact +
-        '<div class="owner">' +
-          (contexte === "mes" && suisPreneur && !suisProprio
-            ? "Chez <b>" + esc(o.proprietaire) + "</b>" + (o.classe ? " · " + esc(o.classe) : "")
-            : "Déposé par <b>" + esc(o.proprietaire) + "</b>" + (o.classe ? " · " + esc(o.classe) : "")) +
-        "</div>" +
-        (actions ? '<div class="obj-actions">' + actions + "</div>" : "") +
-      "</article>"
-    );
+    document.getElementById("fiche-titre-barre").textContent = o.titre;
+    document.getElementById("fiche-corps").innerHTML =
+      '<div class="fiche-photo" style="--sw:' + sw(o.cat) + '"' +
+        (o.photo ? ' data-agrandir="' + esc(o.photo) + '"' : "") + ">" +
+        '<span class="repli">' + esc(catNom(o.cat)) + "</span>" +
+        (o.photo
+          ? '<img src="' + esc(urlPhoto(o.photo)) + '" alt="Photo de ' + esc(o.titre) +
+            '" onerror="this.remove()">'
+          : "") +
+      "</div>" +
+      "<h1>" + esc(o.titre) + "</h1>" +
+      (o.auteur ? '<p class="auteur">' + esc(o.auteur) + "</p>" : "") +
+      '<div class="valeur">' + valeurLongue(o) + "</div>" +
+      (o.note ? '<p class="note">' + esc(o.note) + "</p>" : "") +
+      '<div class="fiche-actions">' + actions + "</div>" +
+      (o.mode === "vente" && !suisProprio
+        ? '<p class="rappel-rdv">Le règlement se fait de la main à la main, au CDI. ' +
+          "L'application n'encaisse rien et ne garantit aucune transaction.</p>"
+        : "") +
+      '<dl class="lignes">' +
+        ligne("Déposé par", o.proprietaire + (o.classe ? " · " + o.classe : "")) +
+        ligne("Catégorie", catNom(o.cat)) +
+        ligne("Matière", o.matiere) +
+        ligne("Niveau", o.niveau) +
+        ligne("État", o.etat) +
+        ligne("ISBN", o.isbn) +
+        ligne("Retrait", "Au CDI") +
+      "</dl>" +
+      (state.me && !suisProprio && !o.signale
+        ? '<button class="btn ghost" data-act="signaler" data-id="' + o.id + '" ' +
+          'style="width:100%;color:var(--faint)">Signaler cette annonce</button>'
+        : "");
   }
 
   function filtrer() {
@@ -1339,7 +1678,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var res = filtrer();
     var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
     var corps = res.length
-      ? '<div class="grid">' + res.map(function (o) { return carte(o, "catalogue"); }).join("") + "</div>"
+      ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
       : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
         '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
 
@@ -1465,13 +1804,13 @@ label .opt{font-weight:400;color:var(--faint)}
     var html = "";
     html += '<h2 class="section-title">À récupérer <span>' + pris.length + "</span></h2>";
     html += pris.length
-      ? '<div class="grid">' + pris.map(function (o) { return carte(o, "mes"); }).join("") + "</div>"
+      ? '<div class="grid">' + pris.map(function (o) { return carte(o); }).join("") + "</div>"
       : '<div class="empty"><p>Vous n\'avez réservé aucun objet.</p>' +
         '<button class="btn ghost" data-act="aller-catalogue">Parcourir le catalogue</button></div>';
 
     html += '<h2 class="section-title">Mes annonces <span>' + deposes.length + "</span></h2>";
     html += deposes.length
-      ? '<div class="grid">' + deposes.map(function (o) { return carte(o, "mes"); }).join("") + "</div>"
+      ? '<div class="grid">' + deposes.map(function (o) { return carte(o); }).join("") + "</div>"
       : '<div class="empty"><p>Vous n\'avez encore rien déposé.</p>' +
         '<button class="btn ghost" data-act="aller-depot">Déposer une annonce</button></div>';
     return html;
@@ -1561,15 +1900,207 @@ label .opt{font-weight:400;color:var(--faint)}
     );
   }
 
+  function quand(iso) {
+    var d = new Date(iso), maintenant = new Date();
+    var meme = d.toDateString() === maintenant.toDateString();
+    return meme
+      ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  }
+
+  function vueMessages() {
+    if (!state.me) {
+      return '<div class="panel"><h2>Vos discussions</h2>' +
+        '<p class="sub">Créez votre compte pour écrire aux autres élèves et convenir d\'un rendez-vous.</p></div>';
+    }
+
+    if (state.filOuvert) return vueDiscussion();
+
+    if (!state.fils.length) {
+      return '<h2 class="section-title">Messages</h2>' +
+        '<div class="empty"><p>Aucune discussion pour l\'instant.</p>' +
+        "<p style=\"font-size:13px\">Ouvrez une annonce et touchez « Écrire » pour convenir d'un rendez-vous.</p>" +
+        '<button class="btn ghost" data-act="aller-catalogue">Parcourir le catalogue</button></div>';
+    }
+
+    var html = '<h2 class="section-title">Messages <span>' + state.fils.length + "</span></h2>";
+    html += '<div class="fils">';
+    for (var i = 0; i < state.fils.length; i++) {
+      var f = state.fils[i];
+      var o = trouver(f.objet) || {};
+      var autre = (f.proprietaire === state.me.cle) ? f.demandeur : f.proprietaire;
+      var m = state.membres[autre] || {};
+      var aVoir = f.dernierAuteur && f.dernierAuteur !== state.me.cle;
+      html +=
+        '<button class="fil" data-fil="' + f.id + '" style="--sw:' + sw(o.cat) + '">' +
+          '<span class="miniature">' +
+            (o.photoMin || o.photo
+              ? '<img src="' + esc(urlPhoto(o.photoMin || o.photo)) + '" alt="">'
+              : "<span>" + esc((catNom(o.cat) || "?").slice(0, 3)) + "</span>") +
+          "</span>" +
+          '<span class="txt">' +
+            "<b>" + esc(o.titre || "Annonce retirée") + "</b>" +
+            '<span class="qui">' + esc(m.pseudo || "élève") +
+              (m.classe ? " · " + esc(m.classe) : "") + "</span>" +
+            '<span class="apercu">' + (f.apercu ? esc(f.apercu) : "Aucun message") + "</span>" +
+          "</span>" +
+          (aVoir ? '<i class="pastille" style="position:static">1</i>' : "") +
+        "</button>";
+    }
+    return html + "</div>";
+  }
+
+  function vueDiscussion() {
+    var f = null;
+    for (var i = 0; i < state.fils.length; i++) if (state.fils[i].id === state.filOuvert) f = state.fils[i];
+    if (!f) { state.filOuvert = null; return vueMessages(); }
+
+    var o = trouver(f.objet) || {};
+    var autre = (f.proprietaire === state.me.cle) ? f.demandeur : f.proprietaire;
+    var m = state.membres[autre] || {};
+
+    var bulles = "";
+    for (var k = 0; k < state.messages.length; k++) {
+      var msg = state.messages[k];
+      var moi = msg.auteur === state.me.cle;
+      bulles += '<div class="bulle ' + (moi ? "moi" : "lui") + '">' + esc(msg.texte) +
+                "<time>" + quand(msg.envoye_le) + "</time></div>";
+    }
+    if (!bulles) {
+      bulles = '<p class="empty" style="padding:26px 18px">Premier message : proposez un créneau et un point de rendez-vous.</p>';
+    }
+
+    return (
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 0 10px">' +
+        '<button class="btn ghost" data-act="retour-messages" style="flex:none">Retour</button>' +
+        '<div style="min-width:0">' +
+          '<b style="display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            esc(o.titre || "Annonce retirée") + "</b>" +
+          '<span style="font-size:12px;color:var(--faint)">avec ' + esc(m.pseudo || "élève") +
+            (m.classe ? " · " + esc(m.classe) : "") + "</span>" +
+        "</div>" +
+        (o.id ? '<button class="btn ghost" data-ouvrir="' + o.id + '" style="flex:none;margin-left:auto">Voir</button>' : "") +
+      "</div>" +
+      '<p class="rappel-rdv">Convenez d\'un créneau et retrouvez-vous <b>au CDI</b>. ' +
+      "Ne donnez ni adresse, ni numéro de téléphone : le rendez-vous se fixe ici.</p>" +
+      '<div class="discussion" id="discussion">' + bulles + "</div>" +
+      '<form class="saisie" id="f-message">' +
+        '<textarea id="m-texte" rows="1" maxlength="800" placeholder="Proposez un créneau…" aria-label="Votre message"></textarea>' +
+        '<button class="btn primary" type="submit">Envoyer</button>' +
+      "</form>"
+    );
+  }
+
+  function vueRecherches() {
+    var mesRecherches = state.me
+      ? state.recherches.filter(function (r) { return r.demandeur === state.me.cle; })
+      : [];
+
+    var html = '<div class="panel" style="margin:18px 0 0">' +
+      "<h2>Vous cherchez quelque chose ?</h2>" +
+      '<p class="sub">Le catalogue ne montre que ce que les élèves ont déjà déposé. ' +
+      "Publiez votre demande : celui qui a ce manuel au fond d'un placard n'aurait jamais pensé à le sortir.</p>";
+
+    if (!state.me) {
+      html += '<p class="note" style="margin:0">Créez votre compte pour publier une demande.</p></div>';
+    } else {
+      var cats = '<option value="">Catégorie</option>';
+      for (var i = 0; i < CATEGORIES.length; i++) cats += '<option value="' + CATEGORIES[i].id + '">' + CATEGORIES[i].nom + "</option>";
+      var mats = '<option value="">Matière</option>';
+      for (var j = 0; j < MATIERES.length; j++) mats += '<option value="' + MATIERES[j] + '">' + MATIERES[j] + "</option>";
+      var nivs = '<option value="">Niveau</option>';
+      for (var k = 0; k < NIVEAUX.length; k++) nivs += '<option value="' + NIVEAUX[k] + '">' + NIVEAUX[k] + "</option>";
+      html +=
+        '<form id="f-recherche"><div class="form-grid">' +
+          '<div class="full"><label for="r-titre">Ce que vous cherchez</label>' +
+            '<input id="r-titre" required maxlength="90" placeholder="Manuel de SES Terminale"></div>' +
+          '<div><label for="r-cat">Catégorie</label><select id="r-cat">' + cats + "</select></div>" +
+          '<div><label for="r-mat">Matière</label><select id="r-mat">' + mats + "</select></div>" +
+          '<div><label for="r-niv">Niveau</label><select id="r-niv">' + nivs + "</select></div>" +
+          '<div class="full"><label for="r-note">Précisions <span class="opt">(facultatif)</span></label>' +
+            '<input id="r-note" maxlength="200" placeholder="Édition 2022 de préférence, peu importe l\'état."></div>' +
+        "</div>" +
+        '<div class="form-foot"><p>Votre demande reste visible tant que vous ne la retirez pas.</p>' +
+        '<button class="btn primary" type="submit">Publier ma demande</button></div></form></div>';
+    }
+
+    html += '<h2 class="section-title">Recherchés par le lycée <span>' + state.recherches.length + "</span></h2>";
+    if (!state.recherches.length) {
+      html += '<div class="empty"><p>Aucune demande pour l\'instant.</p></div>';
+      return html;
+    }
+
+    html += '<div class="fils">';
+    for (var n = 0; n < state.recherches.length; n++) {
+      var r = state.recherches[n];
+      var dem = state.membres[r.demandeur] || {};
+      var mien = state.me && r.demandeur === state.me.cle;
+      html +=
+        '<div class="fil" style="--sw:' + sw(r.categorie || "autre") + ';cursor:default">' +
+          '<span class="miniature"><span>' + esc((catNom(r.categorie) || "?").slice(0, 3)) + "</span></span>" +
+          '<span class="txt">' +
+            "<b>" + esc(r.titre) + "</b>" +
+            '<span class="qui">' + esc(dem.pseudo || "élève") +
+              (dem.classe ? " · " + esc(dem.classe) : "") + (mien ? " · vous" : "") + "</span>" +
+            '<span class="apercu">' +
+              [r.matiere, r.niveau, r.note].filter(Boolean).map(esc).join(" · ") +
+            "</span>" +
+          "</span>" +
+          (mien
+            ? '<button class="btn icon" data-retirer-recherche="' + r.id + '" title="Retirer" aria-label="Retirer ma demande">✕</button>'
+            : '<button class="btn ghost" data-act="aller-depot" style="flex:none">J\'en ai un</button>') +
+        "</div>";
+    }
+    return html + "</div>";
+  }
+
+  function vueMoi() {
+    if (!state.me) {
+      return '<div class="panel"><h2>Votre compte</h2>' +
+        '<p class="sub">Créez votre compte en haut de la page pour déposer, réserver et discuter.</p></div>';
+    }
+    var m = moiMembre() || { credits: 0, dons: 0 };
+    var deposes = state.objets.filter(function (o) { return o.proprietaireCle === state.me.cle; });
+    var pris = state.objets.filter(function (o) {
+      return o.reserveParCle === state.me.cle && o.proprietaireCle !== state.me.cle;
+    });
+
+    var html = '<div class="panel" style="margin:18px 0 0">' +
+      "<h2>" + esc(state.me.pseudo) + "</h2>" +
+      '<p class="sub">' + esc(state.me.classe || "classe non renseignée") +
+      (state.compte && state.compte.email ? " · " + esc(state.compte.email) : "") + "</p>" +
+      '<div class="circuits">' +
+        '<div class="circuit" style="--sw:var(--accent)"><b>' + (m.credits || 0) + "</b>" +
+          "<p>crédits, pour les échanges</p></div>" +
+        '<div class="circuit" style="--sw:var(--ok)"><b>' + (m.dons || 0) + "</b>" +
+          "<p>objets donnés</p></div>" +
+      "</div>" +
+      (estConnecte() ? '<button class="btn ghost" data-act="deconnexion">Se déconnecter</button>' : "") +
+      "</div>";
+
+    html += '<h2 class="section-title">À récupérer <span>' + pris.length + "</span></h2>";
+    html += pris.length
+      ? '<div class="grid">' + pris.map(carte).join("") + "</div>"
+      : '<div class="empty"><p>Vous n\'avez réservé aucun objet.</p></div>';
+
+    html += '<h2 class="section-title">Mes annonces <span>' + deposes.length + "</span></h2>";
+    html += deposes.length
+      ? '<div class="grid">' + deposes.map(carte).join("") + "</div>"
+      : '<div class="empty"><p>Vous n\'avez encore rien déposé.</p>' +
+        '<button class="btn ghost" data-act="aller-depot">Déposer une annonce</button></div>';
+    return html;
+  }
+
   function render() {
     renderBalance();
     renderOnboard();
-    renderTabs();
+    renderNav();
     var v = document.getElementById("view");
-    if (state.onglet === "catalogue") v.innerHTML = vueCatalogue();
-    else if (state.onglet === "deposer") v.innerHTML = vueDeposer();
-    else if (state.onglet === "mes") v.innerHTML = vueMes();
-    else v.innerHTML = vueProjet();
+    if (state.onglet === "catalogue")       v.innerHTML = vueCatalogue();
+    else if (state.onglet === "recherches") v.innerHTML = vueRecherches();
+    else if (state.onglet === "deposer")    v.innerHTML = vueDeposer();
+    else if (state.onglet === "messages")   v.innerHTML = vueMessages();
+    else                                    v.innerHTML = vueMoi();
 
     var q = document.getElementById("q");
     if (q) q.addEventListener("input", function () { state.filtre.q = q.value; rerenderCatalogue(); });
@@ -1583,6 +2114,37 @@ label .opt{font-weight:400;color:var(--faint)}
 
     // Le scan n'est pas toujours possible : une saisie manuelle correcte
     // déclenche la même recherche, sans bouton supplémentaire.
+    var fm = document.getElementById("f-message");
+    if (fm) {
+      var zone = document.getElementById("m-texte");
+      fm.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        var t = zone.value; zone.value = ""; zone.style.height = "";
+        envoyer(t);
+      });
+      // La zone grandit avec le message, comme dans une messagerie.
+      zone.addEventListener("input", function () {
+        zone.style.height = "auto";
+        zone.style.height = Math.min(zone.scrollHeight, 120) + "px";
+      });
+      glisserEnBas();
+    }
+
+    var fr = document.getElementById("f-recherche");
+    if (fr) fr.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var t = document.getElementById("r-titre").value.trim();
+      if (!t) return;
+      publierRecherche({
+        titre: t,
+        cat: document.getElementById("r-cat").value,
+        matiere: document.getElementById("r-mat").value,
+        niveau: document.getElementById("r-niv").value,
+        note: document.getElementById("r-note").value.trim()
+      });
+      fr.reset();
+    });
+
     var fi = document.getElementById("d-isbn");
     if (fi) fi.addEventListener("input", function () {
       var n = normaliserIsbn(fi.value);
@@ -1591,6 +2153,7 @@ label .opt{font-weight:400;color:var(--faint)}
     if (state.photo) apercuPhoto();
 
     renderStatus();
+    if (state.fiche) renderFiche();
   }
 
   // Re-rend la grille seule, pour ne pas perdre le focus du champ de recherche à chaque frappe.
@@ -1606,7 +2169,7 @@ label .opt{font-weight:400;color:var(--faint)}
         (gratuits ? " · dont <b>" + gratuits + "</b> gratuite" + (gratuits > 1 ? "s" : "") : "");
     }
     var neuf = res.length
-      ? '<div class="grid">' + res.map(function (o) { return carte(o, "catalogue"); }).join("") + "</div>"
+      ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
       : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
         '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
     if (cible) cible.outerHTML = neuf;
@@ -1618,8 +2181,8 @@ label .opt{font-weight:400;color:var(--faint)}
       el.innerHTML = "<b>Hors ligne</b> · " + esc(state.horsLigne) +
         " — les annonces affichées sont des exemples.";
     } else if (state.pret) {
-      el.innerHTML = "<b>" + state.objets.length + "</b> annonces · catalogue partagé, " +
-        "mis à jour en direct pour tout le lycée.";
+      el.innerHTML = "<b>" + state.objets.length + "</b> annonces · <b>" +
+        state.recherches.length + "</b> demandes · mis à jour en direct pour tout le lycée.";
     } else {
       el.textContent = "Connexion au catalogue…";
     }
@@ -2434,11 +2997,32 @@ label .opt{font-weight:400;color:var(--faint)}
     if (f) decoderImage(f);
   });
 
+  document.getElementById("fiche").addEventListener("click", function (ev) {
+    if (ev.target.closest('[data-fiche="fermer"]')) { fermerFiche(); return; }
+
+    var ag = ev.target.closest("[data-agrandir]");
+    if (ag) { ouvrirPhoto(ag.getAttribute("data-agrandir")); return; }
+
+    var ouv = ev.target.closest("[data-ouvrir]");
+    if (ouv) { ouvrirFiche(ouv.getAttribute("data-ouvrir")); return; }
+
+    var b = ev.target.closest("[data-act]");
+    if (!b) return;
+    var act = b.getAttribute("data-act"), id = b.getAttribute("data-id");
+    if (act === "reserver") reserver(id);
+    else if (act === "annuler") annuler(id);
+    else if (act === "confirmer") confirmer(id);
+    else if (act === "retirer") { retirer(id); fermerFiche(); }
+    else if (act === "signaler") signaler(id);
+    else if (act === "ecrire") ouvrirDiscussion(id);
+  });
+
   document.getElementById("visionneuse").addEventListener("click", fermerPhoto);
   document.addEventListener("keydown", function (ev) {
     if (ev.key !== "Escape") return;
     if (!document.getElementById("scanner").hidden) { fermerScanner(); return; }
-    if (!document.getElementById("visionneuse").hidden) fermerPhoto();
+    if (!document.getElementById("visionneuse").hidden) { fermerPhoto(); return; }
+    if (!document.getElementById("fiche").hidden) fermerFiche();
   });
 
   /* ---------------- évènements ---------------- */
@@ -2447,12 +3031,21 @@ label .opt{font-weight:400;color:var(--faint)}
     if (ev.target.closest('[data-act="deconnexion"]')) deconnecter();
   });
 
-  document.getElementById("tabs").addEventListener("click", function (ev) {
-    var b = ev.target.closest("[data-tab]");
+  document.getElementById("view").addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var c = ev.target.closest("[data-ouvrir]");
+    if (!c) return;
+    ev.preventDefault();
+    ouvrirFiche(c.getAttribute("data-ouvrir"));
+  });
+
+  document.getElementById("nav").addEventListener("click", function (ev) {
+    var b = ev.target.closest("[data-onglet]");
     if (!b) return;
-    state.onglet = b.getAttribute("data-tab");
+    state.onglet = b.getAttribute("data-onglet");
+    state.filOuvert = null;
     render();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "instant" });
   });
 
   document.getElementById("view").addEventListener("click", function (ev) {
@@ -2461,6 +3054,19 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
+
+    var ouv = ev.target.closest("[data-ouvrir]");
+    if (ouv) { ouvrirFiche(ouv.getAttribute("data-ouvrir")); return; }
+
+    var fil = ev.target.closest("[data-fil]");
+    if (fil) {
+      state.filOuvert = fil.getAttribute("data-fil");
+      chargerMessages(state.filOuvert).then(function () { render(); glisserEnBas(); });
+      return;
+    }
+
+    var rr = ev.target.closest("[data-retirer-recherche]");
+    if (rr) { retirerRecherche(rr.getAttribute("data-retirer-recherche")); return; }
 
     var sc = ev.target.closest("[data-scan]");
     if (sc) {
@@ -2500,6 +3106,8 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "aller-catalogue") { state.onglet = "catalogue"; render(); }
     else if (act === "aller-depot") { state.onglet = "deposer"; render(); }
     else if (act === "deconnexion") deconnecter();
+    else if (act === "ecrire") ouvrirDiscussion(id);
+    else if (act === "retour-messages") { state.filOuvert = null; render(); }
   });
 
   /* ---------------- démarrage ---------------- */
@@ -2514,6 +3122,7 @@ label .opt{font-weight:400;color:var(--faint)}
     state.membres = JSON.parse(JSON.stringify(EXEMPLES_MEMBRES));
     state.objets = EXEMPLES.slice();
     state.me = null;
+    state.fils = []; state.messages = []; state.recherches = []; state.filOuvert = null;
     render();
   }
 
@@ -2523,6 +3132,15 @@ label .opt{font-weight:400;color:var(--faint)}
           function () { charger().catch(function () {}); })
       .on("postgres_changes", { event: "*", schema: "public", table: "membres" },
           function () { charger().catch(function () {}); })
+      // Un message arrive sans rechargement : c'est ce qui rend une
+      // négociation de rendez-vous vivable.
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" },
+          function () {
+            var suite = state.filOuvert ? chargerMessages(state.filOuvert) : Promise.resolve();
+            suite.then(chargerFils).then(function () { render(); }).catch(function () {});
+          })
+      .on("postgres_changes", { event: "*", schema: "public", table: "recherches" },
+          function () { chargerRecherches().then(function () { render(); }).catch(function () {}); })
       .subscribe();
   }
 
