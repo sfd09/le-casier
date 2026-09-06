@@ -1734,10 +1734,36 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function isbnValide(code) { return !!normaliserIsbn(code); }
 
-  // Retient le premier code de la liste qui soit un ISBN.
+  // Beaucoup de livres portent, à côté du code-barres, un QR code menant
+  // à la fiche de l'éditeur — et cette adresse contient souvent l'EAN.
+  // Un QR se lit bien plus facilement qu'un code-barres : il est
+  // bidimensionnel et corrige ses propres erreurs, là où un EAN-13 exige
+  // une image nette. On accepte donc les deux, et on cherche un ISBN
+  // partout dans le texte décodé.
+  function isbnDansTexte(t) {
+    var brut = String(t || "");
+    var compact = brut.replace(/[^0-9Xx]/g, "");
+    var direct = normaliserIsbn(brut);
+    if (direct) return direct;
+
+    var m = compact.match(/97[89][0-9]{10}/g) || [];
+    for (var i = 0; i < m.length; i++) {
+      var n = normaliserIsbn(m[i]);
+      if (n) return n;
+    }
+    // ISBN écrit avec tirets dans une adresse : 978-2-340-04238-4
+    var tirets = brut.match(/97[89][-\s0-9]{11,17}/g) || [];
+    for (var j = 0; j < tirets.length; j++) {
+      var t2 = normaliserIsbn(tirets[j]);
+      if (t2) return t2;
+    }
+    return null;
+  }
+
+  // Retient le premier code de la liste dont on puisse tirer un ISBN.
   function extraireIsbn(codes) {
     for (var i = 0; i < codes.length; i++) {
-      var n = normaliserIsbn(codes[i]);
+      var n = isbnDansTexte(codes[i]);
       if (n) return n;
     }
     return null;
@@ -1805,7 +1831,7 @@ label .opt{font-weight:400;color:var(--faint)}
       if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
     }
     var isbn = extraireIsbn(codes);
-    if (!isbn) return;
+    if (!isbn) return;   // codes non exploitables : consignés dans le relevé
     fermerScanner();
     var champ = document.getElementById("d-isbn");
     if (champ) champ.value = isbn;
@@ -1877,7 +1903,7 @@ label .opt{font-weight:400;color:var(--faint)}
       };
 
       if ("BarcodeDetector" in window) {
-        new window.BarcodeDetector({ formats: ["ean_13", "ean_8"] })
+        new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code"] })
           .detect(img)
           .then(function (r) { fini((r || []).map(function (c) { return c.rawValue; })); })
           .catch(function () { fini([]); });
@@ -1886,7 +1912,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
       chargerZXing().then(function () {
         var Z = window.ZXing, indices = new Map();
-        indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8]);
+        indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.QR_CODE]);
         indices.set(Z.DecodeHintType.TRY_HARDER, true);
         var lecteur = new Z.BrowserMultiFormatReader(indices);
         var essai;
@@ -1920,7 +1946,7 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function viserEtPatienter() {
-    texteScan("Placez le code-barres dans le cadre.", "Il est au dos du livre, sous le prix.");
+    texteScan("Visez le code-barres ou le QR code.", "Au dos du livre. Le QR code, quand il y en a un, se lit plus facilement.");
     if (scan.minuteur) clearTimeout(scan.minuteur);
     // Au bout de dix secondes sans lecture, on aide au lieu de laisser
     // l'élève insister dans le vide.
@@ -1993,7 +2019,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function scanNatif(video) {
     // ean_13 encode l'ISBN ; ean_8 couvre quelques éditions anciennes.
-    var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "ean_8"] });
+    var detecteur = new window.BarcodeDetector({ formats: ["ean_13", "ean_8", "qr_code"] });
     return ouvrirCamera(video)
       .then(function () {
         viserEtPatienter();
@@ -2018,7 +2044,7 @@ label .opt{font-weight:400;color:var(--faint)}
     // il est plus lent et se trompe davantage. On le restreint aux codes
     // de livre et on lui demande d'insister sur les images floues.
     var Z = window.ZXing, indices = new Map();
-    indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8]);
+    indices.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.QR_CODE]);
     indices.set(Z.DecodeHintType.TRY_HARDER, true);
     scan.lecteur = new Z.BrowserMultiFormatReader(indices);
     // On ouvre nous-mêmes la caméra pour imposer la haute résolution et
