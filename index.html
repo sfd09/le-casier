@@ -789,6 +789,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
+  var VERSION_APP = "2026.09.07-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -2239,7 +2240,8 @@ label .opt{font-weight:400;color:var(--faint)}
         " — les annonces affichées sont des exemples.";
     } else if (state.pret) {
       el.innerHTML = "<b>" + state.objets.length + "</b> annonces · <b>" +
-        state.recherches.length + "</b> demandes · mis à jour en direct pour tout le lycée.";
+        state.recherches.length + "</b> demandes · mis à jour en direct pour tout le lycée." +
+        '<br><span style="opacity:.6">version ' + VERSION_APP + "</span>";
     } else {
       el.textContent = "Connexion au catalogue…";
     }
@@ -3274,7 +3276,21 @@ label .opt{font-weight:400;color:var(--faint)}
   // utilisable hors ligne. Sans lui, la page fonctionne normalement.
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function () {
-      navigator.serviceWorker.register("./sw.js").catch(function () {});
+      navigator.serviceWorker.register("./sw.js").then(function (reg) {
+        // iOS garde volontiers une ancienne version : on demande la
+        // vérification à chaque ouverture, et on recharge une fois dès
+        // qu'une nouvelle prend la main. Sans cela, un téléphone peut
+        // rester des jours sur du code périmé.
+        try { reg.update(); } catch (e) {}
+        setInterval(function () { try { reg.update(); } catch (e) {} }, 60 * 60 * 1000);
+      }).catch(function () {});
+
+      var recharge = false;
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        if (recharge) return;
+        recharge = true;
+        location.reload();
+      });
     });
   }
 </script>
