@@ -789,7 +789,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.07-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.07-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -1178,12 +1178,31 @@ label .opt{font-weight:400;color:var(--faint)}
     // seule cause possible est le domaine refusé.
     ["Error confirm email",  "Adresse refusée. Utilisez votre adresse @" + DOMAINE + " du lycée."]
   ];
+  // Supabase fournit un code stable ; le texte anglais, lui, change d'une
+  // version à l'autre. S'y fier avait laissé passer « already BEEN
+  // registered », et l'élève ne voyait qu'un « opération non aboutie ».
+  var CODES_AUTH = {
+    email_exists:               "Cette adresse a déjà un compte.",
+    user_already_exists:        "Cette adresse a déjà un compte.",
+    invalid_credentials:        "Adresse ou mot de passe incorrect.",
+    weak_password:              "Mot de passe trop court : 6 caractères minimum.",
+    over_request_rate_limit:    "Trop de tentatives. Attendez une minute.",
+    over_email_send_rate_limit: "Trop de tentatives. Attendez une minute.",
+    email_address_invalid:      "Adresse invalide.",
+    signup_disabled:            "Les inscriptions sont fermées."
+  };
   function messageAuth(e) {
+    if (e && e.code && CODES_AUTH[e.code]) return CODES_AUTH[e.code];
     var t = String((e && (e.message || e.error_description)) || "");
     for (var i = 0; i < ERREURS_AUTH.length; i++) {
       if (t.indexOf(ERREURS_AUTH[i][0]) !== -1) return ERREURS_AUTH[i][1];
     }
     return messageErreur(e);
+  }
+
+  function adresseDejaPrise(e) {
+    return !!(e && (e.code === "email_exists" || e.code === "user_already_exists" ||
+      /already .*registered|already exists/i.test(String(e.message || ""))));
   }
 
   function relireSession() {
@@ -1230,7 +1249,20 @@ label .opt{font-weight:400;color:var(--faint)}
         toast("Compte créé. Vous vous retrouverez sur tous vos appareils.");
       })
       .catch(function (e) {
-        state.occupe = false; render();
+        state.occupe = false;
+        if (adresseDejaPrise(e)) {
+          // Le compte existe : on amène l'élève là où il doit être plutôt
+          // que de lui annoncer un échec et de le laisser recommencer.
+          state.modeCompte = "connexion";
+          render();
+          var champ = document.getElementById("c-email");
+          if (champ) { champ.value = email; champ.focus(); }
+          var mdp = document.getElementById("c-mdp");
+          if (mdp) mdp.focus();
+          toast("Vous avez déjà un compte. Entrez votre mot de passe.");
+          return;
+        }
+        render();
         toast(messageAuth(e));
       });
   }
