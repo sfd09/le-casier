@@ -1254,6 +1254,31 @@ label .opt{font-weight:400;color:var(--faint)}
       });
   }
 
+  // Un téléphone n'a pas de console : sans ce bouton, un élève coincé
+  // par une session ou un cache abîmé n'a d'autre issue que de fouiller
+  // les réglages de Safari. Il efface tout le stockage local du site,
+  // jamais les données du serveur.
+  function reinitialiser() {
+    toast("Remise à zéro…");
+    var taches = [];
+    try { taches.push(state.sb ? state.sb.auth.signOut() : null); } catch (e) {}
+    if (window.caches && caches.keys) {
+      taches.push(caches.keys().then(function (n) {
+        return Promise.all(n.map(function (x) { return caches.delete(x); }));
+      }));
+    }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      taches.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+        return Promise.all(rs.map(function (r) { return r.unregister(); }));
+      }));
+    }
+    Promise.all(taches.map(function (t) { return Promise.resolve(t).catch(function () {}); }))
+      .then(function () {
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
+        location.replace(location.pathname + "?n=" + Date.now());
+      });
+  }
+
   function deconnecter() {
     state.sb.auth.signOut()
       .then(function () {
@@ -1415,10 +1440,11 @@ label .opt{font-weight:400;color:var(--faint)}
                   '<input id="c-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>'
               : "") +
           "</div>" +
-          '<div style="margin-top:16px">' +
+          '<div style="margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
             '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
               (state.occupe ? "Un instant…" : (inscription ? "Créer mon compte" : "Se connecter")) +
             "</button>" +
+            '<button type="button" class="deconnexion" data-act="reinitialiser">Un problème ? Remettre à zéro</button>' +
           "</div>" +
         "</form>" +
       "</div>";
@@ -2102,7 +2128,12 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="circuit" style="--sw:var(--ok)"><b>' + (m.dons || 0) + "</b>" +
           "<p>objets donnés</p></div>" +
       "</div>" +
-      (estConnecte() ? '<button class="btn ghost" data-act="deconnexion">Se déconnecter</button>' : "") +
+      '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+        (estConnecte() ? '<button class="btn ghost" data-act="deconnexion">Se déconnecter</button>' : "") +
+        '<button type="button" class="deconnexion" data-act="reinitialiser">Remettre l\'application à zéro</button>' +
+      "</div>" +
+      '<p style="margin:11px 0 0;font-size:12px;color:var(--faint)">La remise à zéro efface seulement ce que cet appareil garde en mémoire. ' +
+      "Vos annonces et vos messages sont sur le serveur, ils ne bougent pas.</p>" +
       "</div>";
 
     html += '<h2 class="section-title">À récupérer <span>' + pris.length + "</span></h2>";
@@ -3069,6 +3100,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // bascule « J'ai déjà un compte » restait sans effet et personne ne
   // pouvait se reconnecter depuis un autre appareil.
   document.getElementById("onboard").addEventListener("click", function (ev) {
+    if (ev.target.closest('[data-act="reinitialiser"]')) { reinitialiser(); return; }
     if (ev.target.closest('[data-act="deconnexion"]')) { deconnecter(); return; }
     var cp = ev.target.closest("[data-compte]");
     if (!cp) return;
@@ -3145,6 +3177,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "deconnexion") deconnecter();
     else if (act === "ecrire") ouvrirDiscussion(id);
     else if (act === "retour-messages") { state.filOuvert = null; render(); }
+    else if (act === "reinitialiser") reinitialiser();
   });
 
   /* ---------------- démarrage ---------------- */
