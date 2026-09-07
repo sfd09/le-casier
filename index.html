@@ -1655,6 +1655,22 @@ label .opt{font-weight:400;color:var(--faint)}
     });
   }
 
+  // Un catalogue vide et un filtre trop étroit ne se soignent pas de la
+  // même façon : dire « rien ne correspond à ces filtres » quand le
+  // casier est simplement vide envoie chercher un bouton inexistant.
+  function messageVide() {
+    var actifs = state.objets.filter(estActif).length;
+    if (actifs) {
+      return '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
+        '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
+    }
+    return '<div class="empty">' +
+      "<p><b>Le casier est vide pour l'instant.</b></p>" +
+      '<p style="font-size:13px;max-width:38ch;margin:0 auto 14px">Déposez le premier objet — ' +
+      "un manuel de l'an dernier, une calculatrice, des classeurs — et le service démarre.</p>" +
+      '<button class="btn primary" data-act="aller-depot">Déposer le premier objet</button></div>';
+  }
+
   function vueCatalogue() {
     var modes = [["", "Tout"], ["don", "Dons"], ["troc", "Trocs"], ["vente", "Ventes"]];
     var seg = "";
@@ -1679,8 +1695,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
     var corps = res.length
       ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
-      : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
-        '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
+      : messageVide();
 
     return (
       '<div class="filters">' +
@@ -2170,8 +2185,7 @@ label .opt{font-weight:400;color:var(--faint)}
     }
     var neuf = res.length
       ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
-      : '<div class="empty"><p>Rien ne correspond à ces filtres.</p>' +
-        '<button class="btn ghost" data-act="reset">Tout afficher</button></div>';
+      : messageVide();
     if (cible) cible.outerHTML = neuf;
   }
 
