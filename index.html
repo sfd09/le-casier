@@ -803,7 +803,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.07-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.07-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -858,6 +858,7 @@ label .opt{font-weight:400;color:var(--faint)}
     pret: false,
     horsLigne: null,
     photo: null,     // image compressée, en attente d'envoi
+    brouillon: {},   // saisie du formulaire de dépôt, conservée entre deux rendus
     compte: null,    // { email, anonyme } issu de la session
     modeCompte: "inscription",
     dernierIsbn: null,
@@ -1366,6 +1367,7 @@ label .opt{font-weight:400;color:var(--faint)}
       p_photo: o.photo || null, p_photo_min: o.photoMin || null
     }).then(function () {
       state.photo = null;
+      state.brouillon = {};
       state.onglet = "catalogue";
       // La saisie de cet élève devient la fiche du lycée pour cet ISBN :
       // les suivants n'auront plus à la refaire.
@@ -2245,7 +2247,12 @@ label .opt{font-weight:400;color:var(--faint)}
     var niv = document.getElementById("niv");
     if (niv) niv.addEventListener("change", function () { state.filtre.niveau = niv.value; render(); });
     var fd = document.getElementById("f-depot");
-    if (fd) fd.addEventListener("submit", onDepot);
+    if (fd) {
+      restituerBrouillon();
+      fd.addEventListener("submit", onDepot);
+      fd.addEventListener("input", retenirBrouillon);
+      fd.addEventListener("change", retenirBrouillon);
+    }
 
     var fp = document.getElementById("d-photo");
     if (fp) fp.addEventListener("change", onPhotoChoisie);
@@ -2343,6 +2350,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var etat = document.getElementById("photo-etat");
     if (etat) etat.textContent = "Compression…";
 
+    retenirBrouillon();
     preparerImages(f).then(function (images) {
       state.photo = images;
       render();
@@ -2352,6 +2360,29 @@ label .opt{font-weight:400;color:var(--faint)}
       state.photo = null;
       render();
       toast("Cette image n'a pas pu être lue. Réessayez.");
+    });
+  }
+
+  var CHAMPS_DEPOT = ["d-titre", "d-auteur", "d-isbn", "d-cat", "d-mat",
+                      "d-niv", "d-etat", "d-note", "d-prix"];
+
+  // Choisir une photo ou changer de mode redessine le formulaire, ce qui
+  // effaçait tout ce que l'élève avait déjà tapé. On garde la saisie de
+  // côté et on la remet en place après le rendu.
+  function retenirBrouillon() {
+    if (!document.getElementById("f-depot")) return;
+    CHAMPS_DEPOT.forEach(function (id) {
+      var e = document.getElementById(id);
+      if (e) state.brouillon[id] = e.value;
+    });
+  }
+
+  function restituerBrouillon() {
+    CHAMPS_DEPOT.forEach(function (id) {
+      var e = document.getElementById(id);
+      if (e && state.brouillon[id] !== undefined && state.brouillon[id] !== "") {
+        e.value = state.brouillon[id];
+      }
     });
   }
 
@@ -3155,6 +3186,7 @@ label .opt{font-weight:400;color:var(--faint)}
             (/manuel|programme|bordas|nathan|hachette|magnard|hatier|belin|delagrave|ellipses|dunod|vuibert/i.test(texte)
               ? "manuel" : "lecture");
         }
+        retenirBrouillon();
         toast(r.titre.slice(0, 38) + " — " + r.source);
       });
   }
@@ -3300,13 +3332,14 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var ph = ev.target.closest("[data-photo]");
     if (ph) {
+      retenirBrouillon();
       if (ph.getAttribute("data-photo") === "retirer") { state.photo = null; render(); }
       else { var i = document.getElementById("d-photo"); if (i) i.click(); }
       return;
     }
 
     var dep = ev.target.closest("[data-depot]");
-    if (dep) { state.depotMode = dep.getAttribute("data-depot"); render(); return; }
+    if (dep) { retenirBrouillon(); state.depotMode = dep.getAttribute("data-depot"); render(); return; }
 
     var b = ev.target.closest("[data-act]");
     if (!b) return;
