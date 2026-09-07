@@ -3039,6 +3039,16 @@ label .opt{font-weight:400;color:var(--faint)}
     ouvrirFiche(c.getAttribute("data-ouvrir"));
   });
 
+  // Le panneau de compte vit hors de #view : sans ce gestionnaire, la
+  // bascule « J'ai déjà un compte » restait sans effet et personne ne
+  // pouvait se reconnecter depuis un autre appareil.
+  document.getElementById("onboard").addEventListener("click", function (ev) {
+    var cp = ev.target.closest("[data-compte]");
+    if (!cp) return;
+    state.modeCompte = cp.getAttribute("data-compte");
+    render();
+  });
+
   document.getElementById("nav").addEventListener("click", function (ev) {
     var b = ev.target.closest("[data-onglet]");
     if (!b) return;
