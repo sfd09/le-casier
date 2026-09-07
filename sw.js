@@ -5,7 +5,7 @@
 // première réponse reçue, définitivement. Seuls les fichiers de
 // l'application — qui ne changent qu'à une publication — sont cachés.
 
-const VERSION = "casier-20260907-2";
+const VERSION = "casier-20260907-3";
 const COQUILLE = [
   "./",
   "./index.html",

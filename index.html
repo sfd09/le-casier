@@ -516,6 +516,20 @@ label .opt{font-weight:400;color:var(--faint)}
 .fiche .lignes dt{color:var(--faint)}
 .fiche .lignes dd{margin:0;color:var(--ink);font-weight:600;text-align:right}
 .fiche-actions{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 14px}
+.resume{
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:12px 15px;margin:0 0 16px;
+}
+.resume summary{
+  cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);
+  list-style:none;
+}
+.resume summary::-webkit-details-marker{display:none}
+.resume summary::after{content:" \25BE";font-size:11px}
+.resume[open] summary::after{content:" \25B4"}
+.resume p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--muted)}
+.resume .prov{display:block;margin-top:8px;font-size:11px;color:var(--faint)}
+.auteur-carte{color:var(--muted)!important;font-weight:500}
 .fiche-actions .btn{flex:1 1 150px;padding:12px 16px;font-size:14px}
 
 /* ---------- messagerie ---------- */
@@ -789,7 +803,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.07-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.07-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -847,6 +861,8 @@ label .opt{font-weight:400;color:var(--faint)}
     compte: null,    // { email, anonyme } issu de la session
     modeCompte: "inscription",
     dernierIsbn: null,
+    ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
+    fiches: {},           // fiches connues du lycée, par ISBN
     occupe: false
   };
 
@@ -1070,7 +1086,8 @@ label .opt{font-weight:400;color:var(--faint)}
         ? { pseudo: m[state.moiId].pseudo, classe: m[state.moiId].classe || "", cle: state.moiId }
         : null;
       state.horsLigne = null;
-      return Promise.all([chargerFils(), chargerRecherches()]).then(function () { render(); });
+      return Promise.all([chargerFils(), chargerRecherches(), chargerFiches()])
+        .then(function () { render(); });
     });
   }
 
@@ -1353,9 +1370,13 @@ label .opt{font-weight:400;color:var(--faint)}
       // La saisie de cet élève devient la fiche du lycée pour cet ISBN :
       // les suivants n'auront plus à la refaire.
       if (o.isbn && /^[0-9]{13}$/.test(o.isbn) && o.titre) {
+        var f = (state.ficheTrouvee && state.dernierIsbn === o.isbn) ? state.ficheTrouvee : {};
         rpc("enregistrer_fiche", {
           p_isbn: o.isbn, p_titre: o.titre, p_auteur: o.auteur || "",
-          p_categorie: o.cat || "", p_matiere: o.matiere || "", p_niveau: o.niveau || ""
+          p_categorie: o.cat || "", p_matiere: o.matiere || "", p_niveau: o.niveau || "",
+          p_editeur: f.editeur || null, p_annee: f.annee || null,
+          p_pages: f.pages || null, p_resume: f.resume || null,
+          p_couverture: f.couverture || null
         }).catch(function () {});   // sans conséquence si l'enregistrement échoue
       }
       return charger();
@@ -1586,6 +1607,23 @@ label .opt{font-weight:400;color:var(--faint)}
     return '<span class="troc">1 crédit</span>';
   }
 
+  // À défaut de photo prise par l'élève, la couverture fournie par le
+  // catalogue vaut mieux qu'un aplat de couleur.
+  function illustration(o) {
+    if (o.photo) return urlPhoto(o.photoMin || o.photo);
+    var f = fichePour(o);
+    return (f && f.couverture) || "";
+  }
+
+  // « Auteur · année » : de quoi distinguer deux éditions du même manuel,
+  // ce que le titre seul ne permet pas.
+  function signature(o) {
+    var f = fichePour(o) || {};
+    var a = o.auteur || f.auteur || "";
+    var an = f.annee ? String(f.annee) : "";
+    return [couper(a, 34), an].filter(Boolean).join(" · ");
+  }
+
   // La carte ne porte que ce qui décide d'un clic : la photo, le prix ou
   // le mode, le titre. Tout le reste attend la fiche détaillée.
   function carte(o) {
@@ -1601,8 +1639,8 @@ label .opt{font-weight:400;color:var(--faint)}
       '<article class="obj' + cls + '" style="--sw:' + couleur + '" data-ouvrir="' + o.id + '" tabindex="0">' +
         '<div class="vignette">' +
           '<span class="repli">' + esc(catNom(o.cat)) + "</span>" +
-          (o.photo
-            ? '<img src="' + esc(urlPhoto(o.photoMin || o.photo)) + '" alt="" loading="lazy" ' +
+          (illustration(o)
+            ? '<img src="' + esc(illustration(o)) + '" alt="" loading="lazy" ' +
               'decoding="async" onerror="this.remove()">'
             : "") +
           pill +
@@ -1610,6 +1648,7 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="obj-corps">' +
           valeurCourte(o) +
           "<h3>" + esc(o.titre) + "</h3>" +
+          (signature(o) ? '<span class="sous auteur-carte">' + esc(signature(o)) + "</span>" : "") +
           '<span class="sous">' + esc(o.etat || catNom(o.cat)) + "</span>" +
         "</div>" +
       "</article>"
@@ -1676,20 +1715,25 @@ label .opt{font-weight:400;color:var(--faint)}
       actions = '<button class="btn ghost" disabled>Déjà réservé</button>';
     }
 
+    var fiche = fichePour(o) || {};
     document.getElementById("fiche-titre-barre").textContent = o.titre;
     document.getElementById("fiche-corps").innerHTML =
       '<div class="fiche-photo" style="--sw:' + sw(o.cat) + '"' +
         (o.photo ? ' data-agrandir="' + esc(o.photo) + '"' : "") + ">" +
         '<span class="repli">' + esc(catNom(o.cat)) + "</span>" +
-        (o.photo
-          ? '<img src="' + esc(urlPhoto(o.photo)) + '" alt="Photo de ' + esc(o.titre) +
-            '" onerror="this.remove()">'
+        ((o.photo || fiche.couverture)
+          ? '<img src="' + esc(o.photo ? urlPhoto(o.photo) : fiche.couverture) +
+            '" alt="Photo de ' + esc(o.titre) + '" onerror="this.remove()">'
           : "") +
       "</div>" +
       "<h1>" + esc(o.titre) + "</h1>" +
-      (o.auteur ? '<p class="auteur">' + esc(o.auteur) + "</p>" : "") +
+      ((o.auteur || fiche.auteur) ? '<p class="auteur">' + esc(o.auteur || fiche.auteur) + "</p>" : "") +
       '<div class="valeur">' + valeurLongue(o) + "</div>" +
       (o.note ? '<p class="note">' + esc(o.note) + "</p>" : "") +
+      (fiche.resume
+        ? '<details class="resume"><summary>Résumé</summary><p>' + esc(fiche.resume) + "</p>" +
+          '<span class="prov">Source : catalogue, d\'après l\'ISBN</span></details>'
+        : "") +
       '<div class="fiche-actions">' + actions + "</div>" +
       (o.mode === "vente" && !suisProprio
         ? '<p class="rappel-rdv">Le règlement se fait de la main à la main, au CDI. ' +
@@ -1701,6 +1745,9 @@ label .opt{font-weight:400;color:var(--faint)}
         ligne("Matière", o.matiere) +
         ligne("Niveau", o.niveau) +
         ligne("État", o.etat) +
+        ligne("Éditeur", fiche.editeur) +
+        ligne("Année", fiche.annee ? String(fiche.annee) : "") +
+        ligne("Pages", fiche.pages ? fiche.pages + " p." : "") +
         ligne("ISBN", o.isbn) +
         ligne("Retrait", "Au CDI") +
       "</dl>" +
@@ -2859,6 +2906,24 @@ label .opt{font-weight:400;color:var(--faint)}
   // 1. La mémoire du lycée. Interrogée en premier : c'est la seule source
   //    qui connaisse le parascolaire français, et la seule qui réponde
   //    instantanément.
+  // Les fiches sont peu nombreuses (une par ISBN du lycée) : on les garde
+  // en mémoire pour enrichir le catalogue sans un appel par annonce.
+  function chargerFiches() {
+    if (!state.sb) return Promise.resolve();
+    return state.sb.from("fiches").select("*")
+      .then(function (r) {
+        var m = {};
+        (r.data || []).forEach(function (f) { m[f.isbn] = f; });
+        state.fiches = m;
+      })
+      .catch(function () { state.fiches = {}; });
+  }
+
+  // Complète une annonce avec ce que le lycée sait de son ISBN.
+  function fichePour(o) {
+    return (o && o.isbn && state.fiches[o.isbn]) || null;
+  }
+
   function chercherFiche(isbn) {
     if (!state.sb) return Promise.resolve(null);
     return state.sb.from("fiches").select("*").eq("isbn", isbn).maybeSingle()
@@ -2918,24 +2983,55 @@ label .opt{font-weight:400;color:var(--faint)}
       .then(function (rdf) {
         if (!rdf) return null;
         var doc = new DOMParser().parseFromString(rdf, "application/xml");
-        var lire = function (tag) {
-          var n = doc.getElementsByTagName(tag)[0];
-          return n && n.textContent ? n.textContent.trim() : "";
-        };
-        var brut = lire("dc:title");
-        if (!brut) return null;
-
-        // Le SUDOC écrit « Titre : sous-titre / Auteur,... » avec des
-        // espaces doublés : on sépare et on nettoie.
-        var parts = brut.split(" / ");
-        var titre = parts[0].replace(/\s+/g, " ").replace(/\s+:/g, " :").trim();
-        var auteur = nettoyerAuteur(lire("dc:creator") || parts[1] || "");
-        if (!auteur) {
-          var ed = lire("dc:publisher");
-          if (ed) auteur = ed.split(":").pop().split(",")[0].trim();
+        function tous(tag) {
+          var n = doc.getElementsByTagName(tag), v = [];
+          for (var i = 0; i < n.length; i++) {
+            var t = (n[i].textContent || "").trim();
+            if (t) v.push(t);
+          }
+          return v;
         }
-        if (!titre) return null;
-        return { titre: couper(titre, 90), auteur: couper(auteur, 60), source: "SUDOC" };
+        function un(tag) { var v = tous(tag); return v.length ? v[0] : ""; }
+
+        var brut = un("dc:title");
+        if (!brut) return null;
+        var titre = brut.split(" / ")[0].replace(/\s+/g, " ").replace(/\s+:/g, " :").trim();
+
+        // foaf:name donne « Roux, Cédric (1981-....) » : plus fiable que
+        // de découper le titre, mais il faut remettre le prénom devant.
+        var noms = tous("foaf:name").map(function (n) {
+          n = n.replace(/\s*\(\d{2,4}[-.\d]*\)\s*$/, "").trim();
+          var p = n.split(/,\s*/);
+          return p.length === 2 ? (p[1] + " " + p[0]).trim() : n;
+        }).filter(Boolean);
+        var auteur = noms.length ? noms.slice(0, 2).join(", ")
+                                 : nettoyerAuteur(brut.split(" / ")[1] || "");
+
+        // « Paris : Ellipses , DL 2020 » → éditeur et année
+        var pub = un("dc:publisher"), editeur = "", annee = null;
+        if (pub) {
+          editeur = pub.split(":").pop().replace(/,?\s*(DL|impr\.|cop\.)?\s*\d{4}.*$/i, "")
+                       .replace(/[,;\s]+$/, "").trim();
+          var an = pub.match(/(19|20)\d{2}/);
+          if (an) annee = parseInt(an[0], 10);
+        }
+        if (!annee) { var d2 = un("dc:date").match(/(19|20)\d{2}/); if (d2) annee = parseInt(d2[0], 10); }
+
+        // « 1 vol. (506 p.) : ill. ... » → pagination
+        var pages = null;
+        var fmt = un("dc:format").match(/(\d{2,4})\s*p\b/);
+        if (fmt) pages = parseInt(fmt[1], 10);
+
+        return {
+          titre: couper(titre, 90),
+          auteur: couper(auteur, 60),
+          editeur: couper(editeur, 40),
+          annee: annee,
+          pages: pages,
+          resume: couper(un("dcterms:abstract"), 400),
+          sujets: tous("dc:subject").slice(0, 4),
+          source: "SUDOC"
+        };
       })
       .catch(function () { return null; });
   }
@@ -2947,9 +3043,16 @@ label .opt{font-weight:400;color:var(--faint)}
         if (!d || !d.totalItems || !d.items) return null;
         var v = d.items[0].volumeInfo || {};
         if (!v.title) return null;
+        var img = v.imageLinks || {};
         return {
-          titre: v.subtitle ? v.title + " — " + v.subtitle : v.title,
-          auteur: (v.authors || []).join(", ") || v.publisher || "",
+          titre: couper(v.subtitle ? v.title + " — " + v.subtitle : v.title, 90),
+          auteur: couper((v.authors || []).join(", "), 60),
+          editeur: couper(v.publisher || "", 40),
+          annee: v.publishedDate ? parseInt(String(v.publishedDate).slice(0, 4), 10) || null : null,
+          pages: v.pageCount || null,
+          resume: couper(v.description || "", 400),
+          sujets: v.categories || [],
+          couverture: (img.thumbnail || img.smallThumbnail || "").replace(/^http:/, "https:"),
           source: "Google Books"
         };
       })
@@ -2962,10 +3065,16 @@ label .opt{font-weight:400;color:var(--faint)}
       .then(function (d) {
         var v = d && d["ISBN:" + isbn];
         if (!v || !v.title) return null;
+        var cov = v.cover || {};
         return {
-          titre: v.title,
-          auteur: (v.authors || []).map(function (a) { return a.name; }).join(", ") ||
-                  (v.publishers || []).map(function (p) { return p.name; }).join(", ") || "",
+          titre: couper(v.title, 90),
+          auteur: couper((v.authors || []).map(function (a) { return a.name; }).join(", "), 60),
+          editeur: couper((v.publishers || []).map(function (p) { return p.name; }).join(", "), 40),
+          annee: v.publish_date ? parseInt(String(v.publish_date).match(/(19|20)\d{2}/) || 0, 10) || null : null,
+          pages: v.number_of_pages || null,
+          resume: "",
+          sujets: (v.subjects || []).slice(0, 4).map(function (x) { return x.name || x; }),
+          couverture: cov.medium || cov.large || "",
           source: "Open Library"
         };
       })
@@ -3016,6 +3125,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // l'ISBN est rempli sans faute de frappe, et l'élève complète le reste.
   function remplirDepuisIsbn(isbn) {
     toast("ISBN " + isbn + " — recherche…");
+    state.ficheTrouvee = null;
     // La mémoire du lycée d'abord : instantanée, et seule à connaître
     // les manuels scolaires français.
     chercherFiche(isbn)
@@ -3033,7 +3143,9 @@ label .opt{font-weight:400;color:var(--faint)}
         if (champ("d-titre") && !champ("d-titre").value)  champ("d-titre").value = r.titre;
         if (champ("d-auteur") && !champ("d-auteur").value) champ("d-auteur").value = r.auteur;
 
-        var texte = r.titre + " " + r.auteur;
+        state.ficheTrouvee = r;
+        // Les sujets du catalogue valent mieux qu'une devinette sur le titre.
+        var texte = r.titre + " " + r.auteur + " " + (r.sujets || []).join(" ");
         var mat = r.matiere || deviner(MOTS_MATIERE, texte);
         var niv = r.niveau  || deviner(MOTS_NIVEAU, texte);
         if (mat && champ("d-mat")) champ("d-mat").value = mat;
