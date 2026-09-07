@@ -1270,7 +1270,17 @@ label .opt{font-weight:400;color:var(--faint)}
     rpc("creer_membre", { p_pseudo: pseudo, p_classe: classe || "" })
       .then(charger)
       .then(function () { toast("Bienvenue " + pseudo + " — 2 crédits pour démarrer les échanges."); })
-      .catch(echec);
+      .catch(function (e) {
+        // Le compte a disparu du serveur entre-temps : on repart d'une
+        // session propre plutôt que de boucler sur un formulaire mort.
+        var t = String((e && e.message) || "");
+        if (/violates foreign key|non connecté|JWT|not found/i.test(t)) {
+          toast("Votre session n'est plus valide. Reconnectez-vous.");
+          deconnecter();
+          return;
+        }
+        echec(e);
+      });
   }
 
   function deposer(o) {
@@ -1440,6 +1450,8 @@ label .opt{font-weight:400;color:var(--faint)}
           '<input id="p-classe" maxlength="12" placeholder="1re G2" autocomplete="off"></div>' +
         '<button class="btn primary" type="submit">Valider</button>' +
       "</form>" +
+      '<p style="margin:14px 0 0;font-size:13px;color:var(--muted)">Ce n\'est pas vous ? ' +
+        '<button class="deconnexion" data-act="deconnexion">Se déconnecter</button></p>' +
     "</div>";
   }
 
@@ -3057,6 +3069,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // bascule « J'ai déjà un compte » restait sans effet et personne ne
   // pouvait se reconnecter depuis un autre appareil.
   document.getElementById("onboard").addEventListener("click", function (ev) {
+    if (ev.target.closest('[data-act="deconnexion"]')) { deconnecter(); return; }
     var cp = ev.target.closest("[data-compte]");
     if (!cp) return;
     state.modeCompte = cp.getAttribute("data-compte");
@@ -3168,6 +3181,25 @@ label .opt{font-weight:400;color:var(--faint)}
       .subscribe();
   }
 
+  // getSession() se contente de relire le jeton stocké dans le
+  // navigateur : il survit à la suppression du compte côté serveur.
+  // getUser() interroge le serveur et tranche vraiment. Sans cette
+  // vérification, un compte supprimé laissait l'application persuadée
+  // d'être connectée, réclamant un pseudo que la base refusera toujours.
+  function sessionUtilisable() {
+    return state.sb.auth.getSession()
+      .then(function (r) {
+        if (!(r.data && r.data.session)) return false;
+        return state.sb.auth.getUser().then(function (u) {
+          if (!u.error && u.data && u.data.user) return true;
+          return state.sb.auth.signOut()
+            .then(function () { return false; })
+            .catch(function () { return false; });
+        });
+      })
+      .catch(function () { return false; });
+  }
+
   function demarrer() {
     if (typeof supabase === "undefined" || !supabase.createClient) {
       replier("bibliothèque cliente non chargée");
@@ -3177,11 +3209,11 @@ label .opt{font-weight:400;color:var(--faint)}
 
     // Connexion anonyme : chaque appareil reçoit une identité stable,
     // sans e-mail ni mot de passe. Elle sert à savoir qui dépose quoi.
-    state.sb.auth.getSession()
-      .then(function (r) {
+    sessionUtilisable()
+      .then(function (ok) {
         // Une session anonyme permet de consulter le catalogue avant de
         // s'inscrire ; déposer ou réserver demandera un vrai compte.
-        if (r.data && r.data.session) return null;
+        if (ok) return null;
         return state.sb.auth.signInAnonymously().then(function (a) {
           if (a.error) throw a.error;
           return null;
