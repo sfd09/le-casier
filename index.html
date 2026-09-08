@@ -803,7 +803,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.07-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.08-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -862,6 +862,7 @@ label .opt{font-weight:400;color:var(--faint)}
     compte: null,    // { email, anonyme } issu de la session
     modeCompte: "inscription",
     dernierIsbn: null,
+    essais: 0,
     ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
     fiches: {},           // fiches connues du lycée, par ISBN
     occupe: false
@@ -1464,7 +1465,15 @@ label .opt{font-weight:400;color:var(--faint)}
     if (state.me) { el.innerHTML = ""; return; }
     if (!state.sb || !state.compte) { el.innerHTML = ""; return; }
 
-    if (estConnecte()) { el.innerHTML = formulairePseudo(); brancherPseudo(); return; }
+    if (estConnecte()) {
+      // Sans cette garde, un chargement raté faisait croire à un compte
+      // sans profil, et l'application redemandait un pseudo à chaque
+      // ouverture alors que le profil existait bel et bien.
+      if (!state.pret) { el.innerHTML = ""; return; }
+      el.innerHTML = formulairePseudo();
+      brancherPseudo();
+      return;
+    }
 
     var inscription = state.modeCompte === "inscription";
     el.innerHTML =
@@ -3368,6 +3377,7 @@ label .opt{font-weight:400;color:var(--faint)}
   function replier(raison) {
     state.pret = false;
     state.horsLigne = raison || "serveur injoignable";
+    state.compte = null;   // sinon l'écran de compte affirme n'importe quoi
     state.membres = JSON.parse(JSON.stringify(EXEMPLES_MEMBRES));
     state.objets = EXEMPLES.slice();
     state.me = null;
@@ -3441,10 +3451,28 @@ label .opt{font-weight:400;color:var(--faint)}
         ecouterChangements();
         render();
       })
-      .catch(function (e) { replier(messageErreur(e)); });
+      .catch(function (e) {
+        // Une connexion mobile coupe souvent une seconde au réveil : on
+        // réessaie deux fois avant de basculer hors ligne.
+        if (state.essais < 2) {
+          state.essais++;
+          setTimeout(demarrer, 1200 * state.essais);
+          return;
+        }
+        replier(messageErreur(e));
+      });
   }
 
   demarrer();
+
+  // Revenir d'un tunnel ou rouvrir l'application ne doit pas laisser
+  // l'écran figé sur un état dégradé.
+  window.addEventListener("online", function () {
+    if (!state.pret) { state.essais = 0; demarrer(); }
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && !state.pret) { state.essais = 0; demarrer(); }
+  });
 })();
 </script>
 
