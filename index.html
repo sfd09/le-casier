@@ -754,6 +754,17 @@ label .opt{font-weight:400;color:var(--faint)}
 .signalement .motif{width:100%;margin-bottom:7px;justify-content:flex-start;text-align:left}
 .signalement .annuler-sig{width:100%;margin-top:3px;color:var(--faint)}
 
+/* --- fiches d'articles, dans la console --- */
+.fiches-ref{list-style:none;margin:12px 0 0;padding:0}
+.fiches-ref li{
+  display:flex;gap:12px;align-items:center;justify-content:space-between;
+  padding:10px 0;border-top:1px solid var(--line);
+}
+.fiches-ref li:first-child{border-top:0}
+.fiches-ref b{display:block;font-size:14px}
+.fiche-meta{display:block;margin-top:2px;font-size:12px;color:var(--faint);font-family:var(--mono)}
+.fiches-ref button{flex:0 0 auto;padding:7px 13px;font-size:13px}
+
 /* --- console de modération --- */
 .panel.moderation{margin-bottom:12px}
 .mod-tete{display:flex;gap:12px;align-items:flex-start}
@@ -831,7 +842,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -896,6 +907,7 @@ label .opt{font-weight:400;color:var(--faint)}
     occupe: false,
     referent: false,      // rôle porté par la base, jamais par le navigateur
     file: [],             // annonces signalées, pour le référent
+    fichesRef: [],        // fiches d'articles récentes, pour le référent
     signalementPour: null // annonce dont on est en train de choisir le motif
   };
 
@@ -1150,10 +1162,13 @@ label .opt{font-weight:400;color:var(--faint)}
     return rpc("est_referent")
       .then(function (oui) {
         state.referent = !!oui;
-        if (!oui) { state.file = []; return; }
-        return rpcListe("file_moderation").then(function (l) { state.file = l || []; });
+        if (!oui) { state.file = []; state.fichesRef = []; return; }
+        return Promise.all([
+          rpcListe("file_moderation").then(function (l) { state.file = l || []; }),
+          rpcListe("fiches_recentes").then(function (l) { state.fichesRef = l || []; })
+        ]);
       })
-      .catch(function () { state.referent = false; state.file = []; });
+      .catch(function () { state.referent = false; state.file = []; state.fichesRef = []; });
   }
 
   function aTraiter() {
@@ -1162,6 +1177,18 @@ label .opt{font-weight:400;color:var(--faint)}
       if (state.file[i].moderation === "masque") n++;
     }
     return n;
+  }
+
+  function supprimerFiche(code) {
+    if (!window.confirm(
+        "Supprimer cette fiche ?\n\n" +
+        "Les annonces déjà déposées ne bougent pas. Le prochain élève qui " +
+        "scanne ce code-barres devra tout ressaisir — et sa saisie deviendra " +
+        "la nouvelle fiche.")) return;
+    rpc("supprimer_fiche", { p_code: code })
+      .then(charger)
+      .then(function () { toast("Fiche supprimée."); })
+      .catch(echec);
   }
 
   function moderer(id, decision) {
@@ -1456,10 +1483,10 @@ label .opt{font-weight:400;color:var(--faint)}
       state.onglet = "catalogue";
       // La saisie de cet élève devient la fiche du lycée pour cet ISBN :
       // les suivants n'auront plus à la refaire.
-      if (o.isbn && /^[0-9]{13}$/.test(o.isbn) && o.titre) {
+      if (o.isbn && /^([0-9]{8}|[0-9]{13})$/.test(o.isbn) && o.titre) {
         var f = (state.ficheTrouvee && state.dernierIsbn === o.isbn) ? state.ficheTrouvee : {};
         rpc("enregistrer_fiche", {
-          p_isbn: o.isbn, p_titre: o.titre, p_auteur: o.auteur || "",
+          p_code: o.isbn, p_titre: o.titre, p_auteur: o.auteur || "",
           p_categorie: o.cat || "", p_matiere: o.matiere || "", p_niveau: o.niveau || "",
           p_editeur: f.editeur || null, p_annee: f.annee || null,
           p_pages: f.pages || null, p_resume: f.resume || null,
@@ -2043,12 +2070,13 @@ label .opt{font-weight:400;color:var(--faint)}
           '<div><label for="d-mat">Matière <span class="opt">(si concerné)</span></label><select id="d-mat">' + mats + "</select></div>" +
           '<div><label for="d-niv">Niveau <span class="opt">(si concerné)</span></label><select id="d-niv">' + nivs + "</select></div>" +
           '<div><label for="d-etat">État</label><select id="d-etat">' + ets + "</select></div>" +
-          '<div><label for="d-isbn">ISBN <span class="opt">(livres)</span></label>' +
+          '<div><label for="d-isbn">Code-barres <span class="opt">(tout article)</span></label>' +
             '<div class="photo-champ">' +
               '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331" style="flex:1 1 130px;width:auto">' +
               '<button type="button" class="btn ghost" data-scan="ouvrir">Scanner</button>' +
             "</div>" +
-            '<p class="aide-scan">Scannez le code-barres ou tapez les 13 chiffres. Si le livre est inconnu, votre saisie deviendra sa fiche pour tout le lycée.</p></div>' +
+            '<p class="aide-scan">Scannez le code-barres de n\'importe quel article — livre, calculatrice, fournitures. ' +
+            "S'il est déjà connu, les champs se remplissent seuls ; sinon votre saisie deviendra sa fiche pour tout le lycée.</p></div>" +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
           '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
@@ -2371,7 +2399,35 @@ label .opt{font-weight:400;color:var(--faint)}
       html += '<h2 class="section-title">Déjà tranchées <span>' + vus.length + "</span></h2>";
       html += vus.map(carteModeration).join("");
     }
+
+    html += '<h2 class="section-title">Fiches d\'articles <span>' +
+            state.fichesRef.length + "</span></h2>";
+    html += '<div class="panel">' +
+      '<p class="sub">Ce qu\'un élève a saisi la première fois qu\'un code-barres a été ' +
+      "scanné. Les élèves suivants complètent les champs vides mais ne peuvent plus " +
+      "réécrire le titre — c'est donc à vous de corriger. Supprimer une fiche ne touche " +
+      "à aucune annonce : le prochain dépôt la recrée.</p>" +
+      (state.fichesRef.length
+        ? '<ul class="fiches-ref">' + state.fichesRef.map(ligneFiche).join("") + "</ul>"
+        : '<p class="note" style="margin:11px 0 0">Aucune fiche pour l\'instant.</p>') +
+      "</div>";
     return html;
+  }
+
+  function ligneFiche(f) {
+    var d = new Date(f.maj);
+    var quand = isNaN(d) ? "" : d.toLocaleDateString("fr-FR",
+                  { day: "numeric", month: "short" });
+    var n = Number(f.saisies) || 1;
+    return "<li>" +
+      "<div><b>" + esc(f.titre) + "</b>" +
+        '<span class="fiche-meta">' + esc(f.code) +
+        (f.categorie ? " · " + esc(catNom(f.categorie)) : "") +
+        " · " + n + (n > 1 ? " dépôts" : " dépôt") +
+        (quand ? " · " + esc(quand) : "") + "</span></div>" +
+      '<button class="btn ghost" data-act="supprimer-fiche" data-code="' +
+        esc(f.code) + '">Supprimer</button>' +
+      "</li>";
   }
 
   function carteModeration(f) {
@@ -2675,6 +2731,26 @@ label .opt{font-weight:400;color:var(--faint)}
     return (10 - (somme % 10)) % 10 === +c[12];
   }
 
+  function cleEan8(c) {
+    var somme = 0;
+    for (var i = 0; i < 7; i++) somme += (+c[i]) * (i % 2 ? 1 : 3);
+    return (10 - (somme % 10)) % 10 === +c[7];
+  }
+
+  // Un code-barres d'article n'est pas un ISBN : pas de préfixe 978, pas
+  // de signification, seulement une clé de contrôle. On accepte l'EAN-13,
+  // l'EAN-8 des petits articles, et l'UPC-A américain à 12 chiffres qu'on
+  // ramène à 13 en lui rendant le zéro que la norme sous-entend.
+  function normaliserCode(brut) {
+    var c = String(brut || "").replace(/[^0-9]/g, "");
+    if (c.length === 12) c = "0" + c;
+    if (c.length === 13 && cleEan13(c)) return c;
+    if (c.length === 8  && cleEan8(c))  return c;
+    return null;
+  }
+
+  function estIsbn(code) { return /^97[89]/.test(String(code || "")); }
+
   function cleIsbn10(c) {
     var somme = 0;
     for (var i = 0; i < 9; i++) somme += (+c[i]) * (10 - i);
@@ -2730,6 +2806,20 @@ label .opt{font-weight:400;color:var(--faint)}
   function extraireIsbn(codes) {
     for (var i = 0; i < codes.length; i++) {
       var n = isbnDansTexte(codes[i]);
+      if (n) return n;
+    }
+    return null;
+  }
+
+  // Pour un article quelconque, on n'accepte qu'un code-barres pur.
+  // Fouiller le texte d'un QR à la recherche de treize chiffres, comme on
+  // le fait pour un ISBN, produirait trop de faux positifs : une adresse
+  // web contient volontiers un identifiant de cette longueur.
+  function extraireCode(codes) {
+    var isbn = extraireIsbn(codes);
+    if (isbn) return isbn;
+    for (var i = 0; i < codes.length; i++) {
+      var n = normaliserCode(codes[i]);
       if (n) return n;
     }
     return null;
@@ -2796,13 +2886,13 @@ label .opt{font-weight:400;color:var(--faint)}
     for (var k = 0; k < codes.length; k++) {
       if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
     }
-    var isbn = extraireIsbn(codes);
-    if (!isbn) return;   // codes non exploitables : consignés dans le relevé
+    var code = extraireCode(codes);
+    if (!code) return;   // codes non exploitables : consignés dans le relevé
     fermerScanner();
     var champ = document.getElementById("d-isbn");
-    if (champ) champ.value = isbn;
-    state.dernierIsbn = isbn;
-    remplirDepuisIsbn(isbn);
+    if (champ) champ.value = code;
+    state.dernierIsbn = code;
+    remplirDepuisCode(code);
   }
 
   // Chrome et Android savent lire un code-barres nativement. Safari non :
@@ -2985,8 +3075,8 @@ label .opt{font-weight:400;color:var(--faint)}
                 for (var k = 0; k < codes.length; k++) {
                   if (scan.vus.indexOf(codes[k]) === -1) scan.vus.push(codes[k]);
                 }
-                var isbn = extraireIsbn(codes);
-                if (isbn) { noter("trouve essai " + (i + 1)); codesLus([isbn]); return; }
+                var code = extraireCode(codes);
+                if (code) { noter("trouve essai " + (i + 1)); codesLus([code]); return; }
                 i++; setTimeout(suite, 0);
               });
           }
@@ -3178,7 +3268,7 @@ label .opt{font-weight:400;color:var(--faint)}
     return state.sb.from("fiches").select("*")
       .then(function (r) {
         var m = {};
-        (r.data || []).forEach(function (f) { m[f.isbn] = f; });
+        (r.data || []).forEach(function (f) { m[f.code] = f; });
         state.fiches = m;
       })
       .catch(function () { state.fiches = {}; });
@@ -3189,9 +3279,9 @@ label .opt{font-weight:400;color:var(--faint)}
     return (o && o.isbn && state.fiches[o.isbn]) || null;
   }
 
-  function chercherFiche(isbn) {
+  function chercherFiche(code) {
     if (!state.sb) return Promise.resolve(null);
-    return state.sb.from("fiches").select("*").eq("isbn", isbn).maybeSingle()
+    return state.sb.from("fiches").select("*").eq("code", code).maybeSingle()
       .then(function (r) {
         if (r.error || !r.data) return null;
         var f = r.data;
@@ -3388,6 +3478,35 @@ label .opt{font-weight:400;color:var(--faint)}
 
   // Le scan reste utile même quand aucun catalogue ne connaît le livre :
   // l'ISBN est rempli sans faute de frappe, et l'élève complète le reste.
+  // Un 978 ou 979 est un livre : les catalogues publics le connaissent.
+  // Tout le reste n'existe que dans la mémoire du lycée, faute de base
+  // publique et gratuite décrivant les objets ordinaires.
+  function remplirDepuisCode(code) {
+    if (estIsbn(code)) return remplirDepuisIsbn(code);
+    return remplirDepuisArticle(code);
+  }
+
+  function remplirDepuisArticle(code) {
+    toast("Code " + code + " — recherche…");
+    state.ficheTrouvee = null;
+    return chercherFiche(code).then(function (r) {
+      var champ = function (id) { return document.getElementById(id); };
+      if (!r) {
+        toast("Article encore inconnu du casier. Décrivez-le : le prochain élève n'aura plus rien à saisir.");
+        if (champ("d-titre")) champ("d-titre").focus();
+        return;
+      }
+      if (champ("d-titre")  && !champ("d-titre").value)  champ("d-titre").value  = r.titre;
+      if (champ("d-auteur") && !champ("d-auteur").value) champ("d-auteur").value = r.auteur;
+      if (r.categorie && champ("d-cat")) champ("d-cat").value = r.categorie;
+      if (r.matiere   && champ("d-mat")) champ("d-mat").value = r.matiere;
+      if (r.niveau    && champ("d-niv")) champ("d-niv").value = r.niveau;
+      state.ficheTrouvee = r;
+      retenirBrouillon();
+      toast(r.titre.slice(0, 38) + " — " + r.source);
+    });
+  }
+
   function remplirDepuisIsbn(isbn) {
     toast("ISBN " + isbn + " — recherche…");
     state.ficheTrouvee = null;
@@ -3594,6 +3713,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "retour-messages") { state.filOuvert = null; render(); }
     else if (act === "reinitialiser") reinitialiser();
     else if (act === "moderer") moderer(id, b.getAttribute("data-decision"));
+    else if (act === "supprimer-fiche") supprimerFiche(b.getAttribute("data-code"));
   });
 
   /* ---------------- démarrage ---------------- */
