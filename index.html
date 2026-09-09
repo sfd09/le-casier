@@ -614,6 +614,8 @@ label .opt{font-weight:400;color:var(--faint)}
   border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);
 }
 .depot-scan .aide-scan{color:var(--muted)}
+#d-suggest .chiprail{margin-top:7px}
+#d-suggest .chip{cursor:pointer;padding:7px 11px}
 /* Sur un écran large, le bouton garde sa taille naturelle à côté du
    champ. Sur téléphone il passe dessous, et prend alors toute la ligne :
    c'est l'action principale du formulaire, pas un bouton d'appoint. */
@@ -858,10 +860,48 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-7";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
+
+  // Ce que les élèves déposent le plus souvent, par catégorie. C'est la
+  // saisie libre qui décourage : un clic remplit le titre et la marque.
+  // Dans un lycée, l'essentiel de ce qui circule tient en quelques
+  // dizaines d'articles identiques — les livres, eux, passent par le
+  // code-barres.
+  var SUGGESTIONS = {
+    calc: [
+      { t: "Casio Graph 35+E II",       a: "Casio" },
+      { t: "Casio Graph 90+E",          a: "Casio" },
+      { t: "Casio Graph 25+E II",       a: "Casio" },
+      { t: "Casio fx-92 Collège",       a: "Casio" },
+      { t: "TI-83 Premium CE",          a: "Texas Instruments" },
+      { t: "TI-83 Premium CE Python",   a: "Texas Instruments" },
+      { t: "TI-82 Advanced",            a: "Texas Instruments" },
+      { t: "NumWorks N0110",            a: "NumWorks" },
+      { t: "NumWorks N0120",            a: "NumWorks" },
+      { t: "HP Prime",                  a: "HP" },
+      { t: "Calculatrice scientifique", a: "" }
+    ],
+    sport: [
+      { t: "Tee-shirt d'EPS" }, { t: "Short d'EPS" }, { t: "Survêtement" },
+      { t: "Chaussures de sport" }, { t: "Sac de sport" },
+      { t: "Maillot de bain" }, { t: "Bonnet de bain" },
+      { t: "Raquette de badminton" }, { t: "Protège-tibias" }
+    ],
+    fournitures: [
+      { t: "Trousse" }, { t: "Stylos" }, { t: "Surligneurs" }, { t: "Règle" },
+      { t: "Équerre" }, { t: "Compas" }, { t: "Rapporteur" }, { t: "Cahier" },
+      { t: "Classeur" }, { t: "Copies doubles" }, { t: "Pochettes plastiques" },
+      { t: "Agenda" }
+    ],
+    materiel: [
+      { t: "Casque audio" }, { t: "Écouteurs" }, { t: "Clé USB" },
+      { t: "Chargeur" }, { t: "Câble USB-C" }, { t: "Souris" },
+      { t: "Blouse de laboratoire" }, { t: "Kit de dessin technique" }
+    ]
+  };
 
   var CATEGORIES = [
     { id: "manuel",      nom: "Manuel scolaire" },
@@ -925,6 +965,7 @@ label .opt{font-weight:400;color:var(--faint)}
     compte: null,    // { email, anonyme } issu de la session
     modeCompte: "inscription",   // inscription · connexion · oubli
     recuperation: false,         // retour depuis un lien de réinitialisation
+    suggestion: null,            // article courant choisi d'un clic
     dernierIsbn: null,
     essais: 0,
     ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
@@ -1321,6 +1362,12 @@ label .opt{font-weight:400;color:var(--faint)}
 
   var DOMAINE = "monlycee.net";
 
+  // Passer à true le jour où un vrai service d'envoi est branché dans
+  // Supabase. Tant que c'est false, « Mot de passe oublié ? » reste
+  // caché : annoncer un lien qui n'arrive jamais est pire que de ne
+  // rien proposer. Tout le reste du mécanisme est en place et testé.
+  var SMTP_PRET = false;
+
   function estConnecte() { return !!(state.compte && !state.compte.anonyme); }
 
   var ERREURS_AUTH = [
@@ -1701,7 +1748,7 @@ label .opt{font-weight:400;color:var(--faint)}
             '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
               (state.occupe ? "Un instant…" : (inscription ? "Créer mon compte" : "Se connecter")) +
             "</button>" +
-            (inscription ? ""
+            (inscription || !SMTP_PRET ? ""
               : '<button type="button" class="deconnexion" data-compte="oubli">Mot de passe oublié ?</button>') +
             '<button type="button" class="deconnexion" data-act="reinitialiser">Un problème ? Remettre à zéro</button>' +
           "</div>" +
@@ -2140,7 +2187,7 @@ label .opt{font-weight:400;color:var(--faint)}
     return (
       '<div class="filters">' +
         '<div class="search">' +
-          '<input type="search" id="q" placeholder="Chercher un titre, une matière, un ISBN…" value="' + esc(state.filtre.q) + '" aria-label="Rechercher">' +
+          '<input type="search" id="q" placeholder="Chercher un titre, une matière, un code-barres…" value="' + esc(state.filtre.q) + '" aria-label="Rechercher">' +
           '<select id="niv" aria-label="Filtrer par niveau" style="flex:0 0 160px;width:auto">' + opts + "</select>" +
         "</div>" +
         '<div class="seg" role="group" aria-label="Filtrer par type d\'échange">' + seg + "</div>" +
@@ -2220,6 +2267,7 @@ label .opt{font-weight:400;color:var(--faint)}
           '<div><label for="d-auteur">Auteur, marque ou modèle</label>' +
             '<input id="d-auteur" maxlength="60" placeholder="NumWorks — modèle N0110"></div>' +
           '<div><label for="d-cat">Catégorie</label><select id="d-cat">' + cats + "</select></div>" +
+          '<div class="full" id="d-suggest"></div>' +
           champPrix +
           '<div><label for="d-mat">Matière <span class="opt">(si concerné)</span></label><select id="d-mat">' + mats + "</select></div>" +
           '<div><label for="d-niv">Niveau <span class="opt">(si concerné)</span></label><select id="d-niv">' + nivs + "</select></div>" +
@@ -2692,9 +2740,12 @@ label .opt{font-weight:400;color:var(--faint)}
     if (fd) {
       restituerBrouillon();
       majPublier();
+      majSuggestions();
       fd.addEventListener("submit", onDepot);
       fd.addEventListener("input", function () { retenirBrouillon(); majPublier(); });
-      fd.addEventListener("change", function () { retenirBrouillon(); majPublier(); });
+      fd.addEventListener("change", function () {
+        retenirBrouillon(); majPublier(); majSuggestions();
+      });
     }
 
     var fp = document.getElementById("d-photo");
@@ -2833,6 +2884,48 @@ label .opt{font-weight:400;color:var(--faint)}
   // toute façon. Autant éteindre le bouton tout de suite plutôt que de
   // laisser l'élève remplir tout le formulaire pour buter sur un refus.
   // Le don et le troc n'ont pas de champ prix : rien ne les retient.
+  function blocSuggestions(cat) {
+    // Pour un livre, le code-barres fait mieux que n'importe quelle
+    // liste : on le rappelle plutôt que de laisser un vide.
+    if (cat === "manuel" || cat === "lecture") {
+      return '<p class="aide-scan" style="margin:0">Pour un livre, le code-barres au dos remplit ' +
+             "tout seul le titre, l'auteur et l'éditeur. Inutile de saisir quoi que ce soit.</p>";
+    }
+    var liste = SUGGESTIONS[cat];
+    if (!liste || !liste.length) return "";
+
+    var h = '<label>Les plus courants <span class="opt">(un clic remplit les champs)</span></label>' +
+            '<div class="chiprail">';
+    for (var i = 0; i < liste.length; i++) {
+      var cle = cat + "|" + i;
+      h += '<button type="button" class="chip" data-sugg="' + cle + '" aria-pressed="' +
+           (state.suggestion === cle) + '">' + esc(liste[i].t) + "</button>";
+    }
+    return h + "</div>";
+  }
+
+  function majSuggestions() {
+    var zone = document.getElementById("d-suggest");
+    var sel = document.getElementById("d-cat");
+    if (zone && sel) zone.innerHTML = blocSuggestions(sel.value);
+  }
+
+  function appliquerSuggestion(cle) {
+    var bout = String(cle).split("|");
+    var s = (SUGGESTIONS[bout[0]] || [])[+bout[1]];
+    if (!s) return;
+    var titre  = document.getElementById("d-titre");
+    var auteur = document.getElementById("d-auteur");
+    // L'élève a cliqué délibérément : on remplace ce qu'il avait mis,
+    // quitte à ce qu'il retouche ensuite.
+    if (titre)  titre.value  = s.t;
+    if (auteur) auteur.value = s.a || "";
+    state.suggestion = cle;
+    retenirBrouillon();
+    majPublier();
+    majSuggestions();
+  }
+
   function prixSaisiValide() {
     var champ = document.getElementById("d-prix");
     if (!champ) return true;
@@ -3825,6 +3918,9 @@ label .opt{font-weight:400;color:var(--faint)}
   document.getElementById("view").addEventListener("click", function (ev) {
     var seg = ev.target.closest("[data-mode]");
     if (seg) { state.filtre.mode = seg.getAttribute("data-mode"); render(); return; }
+
+    var sugg = ev.target.closest("[data-sugg]");
+    if (sugg) { appliquerSuggestion(sugg.getAttribute("data-sugg")); return; }
 
     var chip = ev.target.closest("[data-cat]");
     if (chip) { state.filtre.cat = chip.getAttribute("data-cat"); render(); return; }
