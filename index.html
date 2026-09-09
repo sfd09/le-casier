@@ -592,6 +592,9 @@ label .opt{font-weight:400;color:var(--faint)}
 .btn.icon:hover{color:var(--alert);border-color:var(--alert)}
 .btn[disabled]{opacity:.45;cursor:not-allowed}
 .btn[disabled]:hover{filter:none;background:var(--surface-2)}
+.btn.primary[disabled]:hover{background:var(--accent)}
+.btn.give[disabled]:hover{background:var(--ok)}
+.aide-publier{margin:9px 0 0;font-size:12px;color:var(--faint);text-align:center}
 
 /* ---------- panneaux ---------- */
 .panel{
@@ -842,7 +845,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -2098,9 +2101,13 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="form-foot">' +
           "<p>Photographiez <strong>l'objet seul</strong>. Aucune photo de personne, " +
           "ni de document portant un nom : les annonces sont visibles par tout le lycée.</p>" +
-          '<button class="btn ' + (state.depotMode === "don" ? "give" : "primary") + '" type="submit">' +
+          '<button id="d-publier" class="btn ' + (state.depotMode === "don" ? "give" : "primary") + '" type="submit">' +
             (state.depotMode === "don" ? "Publier le don" : state.depotMode === "troc" ? "Publier · +1 crédit" : "Publier l'annonce") +
           "</button>" +
+          (state.depotMode === "vente"
+            ? '<p class="aide-publier">Une vente doit porter un prix : indiquez-le, entre 1 et ' +
+              PLAFOND_PRIX + " €, pour pouvoir publier.</p>"
+            : "") +
         "</div>" +
       "</form></div>"
     );
@@ -2539,9 +2546,10 @@ label .opt{font-weight:400;color:var(--faint)}
     var fd = document.getElementById("f-depot");
     if (fd) {
       restituerBrouillon();
+      majPublier();
       fd.addEventListener("submit", onDepot);
-      fd.addEventListener("input", retenirBrouillon);
-      fd.addEventListener("change", retenirBrouillon);
+      fd.addEventListener("input", function () { retenirBrouillon(); majPublier(); });
+      fd.addEventListener("change", function () { retenirBrouillon(); majPublier(); });
     }
 
     var fp = document.getElementById("d-photo");
@@ -2674,6 +2682,25 @@ label .opt{font-weight:400;color:var(--faint)}
         e.value = state.brouillon[id];
       }
     });
+  }
+
+  // Publier une vente sans prix n'a pas de sens, et la base la refuse de
+  // toute façon. Autant éteindre le bouton tout de suite plutôt que de
+  // laisser l'élève remplir tout le formulaire pour buter sur un refus.
+  // Le don et le troc n'ont pas de champ prix : rien ne les retient.
+  function prixSaisiValide() {
+    var champ = document.getElementById("d-prix");
+    if (!champ) return true;
+    // On s'en remet aux contraintes portées par le champ (required, min,
+    // max, step) plutôt que de les réécrire ici : une règle recopiée
+    // finit par diverger de celle que le navigateur applique vraiment,
+    // et le bouton se rallumerait sur une valeur que l'envoi refuse.
+    return champ.checkValidity();
+  }
+
+  function majPublier() {
+    var b = document.getElementById("d-publier");
+    if (b) b.disabled = !prixSaisiValide();
   }
 
   function onDepot(ev) {
