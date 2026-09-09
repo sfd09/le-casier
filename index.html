@@ -858,7 +858,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-5";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -923,7 +923,8 @@ label .opt{font-weight:400;color:var(--faint)}
     photo: null,     // image compressée, en attente d'envoi
     brouillon: {},   // saisie du formulaire de dépôt, conservée entre deux rendus
     compte: null,    // { email, anonyme } issu de la session
-    modeCompte: "inscription",
+    modeCompte: "inscription",   // inscription · connexion · oubli
+    recuperation: false,         // retour depuis un lien de réinitialisation
     dernierIsbn: null,
     essais: 0,
     ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
@@ -1141,6 +1142,9 @@ label .opt{font-weight:400;color:var(--faint)}
     ["votre réservation",    "Cette réservation n'est pas la vôtre."],
     ["autre élève",          "Cette annonce appartient à un autre élève."],
     ["non connecté",         "Connexion perdue. Rechargez la page."],
+    ["at least 6 characters", "Le mot de passe doit faire au moins 6 caractères."],
+    ["should be different",  "Choisissez un mot de passe différent de l'ancien."],
+    ["Invalid login",        "Adresse ou mot de passe incorrect."],
     ["prix_coherent",        "Une vente doit avoir un prix, un don et un troc non."],
     ["objets_prix_check",    "Prix plafonné à " + PLAFOND_PRIX + " €."]
   ];
@@ -1628,6 +1632,18 @@ label .opt{font-weight:400;color:var(--faint)}
   function renderOnboard() {
     var el = document.getElementById("onboard");
 
+    // Le retour depuis un lien de réinitialisation passe avant tout :
+    // à ce moment la session est déjà ouverte, donc `state.me` est
+    // renseigné et les gardes ci-dessous masqueraient le formulaire.
+    if (state.recuperation) {
+      el.innerHTML = formulaireNouveauMdp();
+      document.getElementById("f-nouveau-mdp").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        changerMotDePasse(document.getElementById("n-mdp").value);
+      });
+      return;
+    }
+
     // Trois situations : pas encore de compte, compte sans pseudo, ou tout est en place.
     if (state.me) { el.innerHTML = ""; return; }
     if (!state.sb || !state.compte) { el.innerHTML = ""; return; }
@@ -1639,6 +1655,15 @@ label .opt{font-weight:400;color:var(--faint)}
       if (!state.pret) { el.innerHTML = ""; return; }
       el.innerHTML = formulairePseudo();
       brancherPseudo();
+      return;
+    }
+
+    if (state.modeCompte === "oubli") {
+      el.innerHTML = formulaireOubli();
+      document.getElementById("f-oubli").addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        demanderReinitialisation(document.getElementById("o-email").value.trim().toLowerCase());
+      });
       return;
     }
 
@@ -1676,6 +1701,8 @@ label .opt{font-weight:400;color:var(--faint)}
             '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
               (state.occupe ? "Un instant…" : (inscription ? "Créer mon compte" : "Se connecter")) +
             "</button>" +
+            (inscription ? ""
+              : '<button type="button" class="deconnexion" data-compte="oubli">Mot de passe oublié ?</button>') +
             '<button type="button" class="deconnexion" data-act="reinitialiser">Un problème ? Remettre à zéro</button>' +
           "</div>" +
         "</form>" +
@@ -1693,6 +1720,96 @@ label .opt{font-weight:400;color:var(--faint)}
         connecter(email, mdp);
       }
     });
+  }
+
+  /* ---------------- mot de passe oublié ---------------- */
+
+  function formulaireOubli() {
+    return '<div class="onboard">' +
+      '<div class="compte-bascule" role="group">' +
+        '<button data-compte="inscription" aria-pressed="false">Créer mon compte</button>' +
+        '<button data-compte="connexion" aria-pressed="false">J\'ai déjà un compte</button>' +
+      "</div>" +
+      "<h2>Mot de passe oublié</h2>" +
+      "<p>Indiquez votre adresse du lycée : un lien y sera envoyé pour en choisir un nouveau. " +
+      "Vos annonces, vos crédits et vos messages ne bougent pas.</p>" +
+      '<form id="f-oubli">' +
+        '<div class="compte-champs">' +
+          '<div class="full"><label for="o-email">Adresse du lycée</label>' +
+            '<input id="o-email" type="email" required autocomplete="email" ' +
+            'placeholder="prenom.nom@' + DOMAINE + '"></div>' +
+        "</div>" +
+        '<div style="margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">' +
+          '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
+            (state.occupe ? "Un instant…" : "Envoyer le lien") + "</button>" +
+          '<button type="button" class="deconnexion" data-compte="connexion">Revenir à la connexion</button>' +
+        "</div>" +
+      "</form>" +
+    "</div>";
+  }
+
+  function demanderReinitialisation(email) {
+    if (state.occupe) return;
+    if (!bonDomaine(email)) {
+      toast("Utilisez votre adresse @" + DOMAINE + ".");
+      return;
+    }
+    state.occupe = true; render();
+
+    // L'adresse de retour doit figurer dans Supabase (Authentication >
+    // URL Configuration), sinon le lien renvoie ailleurs et le jeton
+    // est perdu.
+    state.sb.auth.resetPasswordForEmail(email, {
+      redirectTo: location.origin + location.pathname
+    })
+      .then(function (r) { if (r && r.error) throw r.error; })
+      .then(function () {
+        state.occupe = false;
+        state.modeCompte = "connexion";
+        render();
+        // On ne dit jamais si l'adresse est connue : sinon n'importe qui
+        // pourrait savoir quels élèves ont un compte.
+        toast("Si un compte existe pour cette adresse, un lien vient d'y être envoyé.");
+      })
+      .catch(function (e) { state.occupe = false; render(); echec(e); });
+  }
+
+  function formulaireNouveauMdp() {
+    return '<div class="onboard">' +
+      "<h2>Choisir un nouveau mot de passe</h2>" +
+      "<p>Le lien que vous venez d'ouvrir prouve que cette adresse est la vôtre. " +
+      "Le nouveau mot de passe remplacera l'ancien immédiatement.</p>" +
+      '<form id="f-nouveau-mdp">' +
+        '<div class="compte-champs">' +
+          '<div class="full"><label for="n-mdp">Nouveau mot de passe</label>' +
+            '<input id="n-mdp" type="password" required minlength="6" ' +
+            'autocomplete="new-password" placeholder="6 caractères minimum"></div>' +
+        "</div>" +
+        '<div style="margin-top:16px">' +
+          '<button class="btn primary" type="submit"' + (state.occupe ? " disabled" : "") + ">" +
+            (state.occupe ? "Un instant…" : "Enregistrer") + "</button>" +
+        "</div>" +
+      "</form>" +
+    "</div>";
+  }
+
+  function changerMotDePasse(mdp) {
+    if (state.occupe) return;
+    state.occupe = true; render();
+    state.sb.auth.updateUser({ password: mdp })
+      .then(function (r) { if (r && r.error) throw r.error; })
+      .then(relireSession)
+      .then(charger)
+      .then(function () {
+        state.occupe = false;
+        state.recuperation = false;
+        // Le jeton reste dans l'adresse tant qu'on ne l'efface pas : sans
+        // cela, un rechargement rouvrirait ce formulaire indéfiniment.
+        try { history.replaceState(null, "", location.pathname); } catch (e) {}
+        render();
+        toast("Mot de passe changé. Votre session est ouverte.");
+      })
+      .catch(function (e) { state.occupe = false; render(); echec(e); });
   }
 
   // Cas rare : le compte existe mais le pseudo n'a pas été enregistré.
@@ -3831,6 +3948,21 @@ label .opt{font-weight:400;color:var(--faint)}
       return;
     }
     state.sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+    // Retour depuis un lien de réinitialisation : la bibliothèque lit le
+    // jeton présent dans l'adresse, ouvre la session et nous prévient.
+    // Le repli sur l'adresse couvre le cas où l'évènement passe avant
+    // que nous soyons à l'écoute.
+    // On exige le jeton, pas seulement la mention du type : sans cela,
+    // écrire « ?type=recovery » dans la barre d'adresse suffirait à
+    // ouvrir un formulaire qui ne peut rien changer.
+    var retour = location.hash || "";
+    if (/type=recovery/.test(retour) && /access_token=/.test(retour)) {
+      state.recuperation = true;
+    }
+    state.sb.auth.onAuthStateChange(function (evenement) {
+      if (evenement === "PASSWORD_RECOVERY") { state.recuperation = true; render(); }
+    });
 
     // Connexion anonyme : chaque appareil reçoit une identité stable,
     // sans e-mail ni mot de passe. Elle sert à savoir qui dépose quoi.
