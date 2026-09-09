@@ -74,12 +74,15 @@ def dessiner(sortie, donnees, titre, legende, large=620, marge=48):
 
 
 if __name__ == "__main__":
-    v = version_app()                      # ex. 2026.09.09-1
-    jour = v.split("-")[0].replace(".", "")  # → 20260909
+    v = version_app()                  # ex. 2026.09.09-4
+    # La version entière, pas seulement le jour : plusieurs publications
+    # dans la même journée donneraient sinon la même adresse, et le QR
+    # cesserait de forcer quoi que ce soit dès la deuxième.
+    marque = v.replace(".", "")        # → 20260909-4
 
     dessiner("qr-le-casier.png", SITE,
              "Le Casier du lycée", "sfd09.github.io/le-casier", large=620)
 
-    dessiner("qr-installer.png", f"{SITE}?v={jour}",
+    dessiner("qr-installer.png", f"{SITE}?v={marque}",
              f"Le Casier — version {v}", "force le chargement de la nouvelle version",
              large=750)
