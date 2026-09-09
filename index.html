@@ -739,6 +739,34 @@ label .opt{font-weight:400;color:var(--faint)}
   @keyframes rise{from{opacity:0;transform:translateX(-50%) translateY(8px)}}
 }
 
+/* --- signalement motivé, au bas de la fiche --- */
+.signalement{
+  margin-top:14px;padding:14px;border-radius:14px;
+  background:var(--alert-soft);border:1px solid color-mix(in srgb,var(--alert) 22%,transparent);
+}
+.signalement h3{margin:0 0 4px;font-size:15px}
+.signalement .sub{margin:0 0 11px}
+.signalement textarea{
+  width:100%;margin:0 0 10px;padding:9px 11px;border-radius:10px;
+  border:1px solid var(--line-strong);background:var(--surface);color:inherit;
+  font:inherit;resize:vertical;box-sizing:border-box;
+}
+.signalement .motif{width:100%;margin-bottom:7px;justify-content:flex-start;text-align:left}
+.signalement .annuler-sig{width:100%;margin-top:3px;color:var(--faint)}
+
+/* --- console de modération --- */
+.panel.moderation{margin-bottom:12px}
+.mod-tete{display:flex;gap:12px;align-items:flex-start}
+.mod-tete h3{margin:0 0 2px;font-size:16px}
+.mod-tete .sub{margin:0}
+.mod-photo{
+  width:62px;height:62px;flex:0 0 62px;object-fit:cover;
+  border-radius:10px;background:var(--surface-2);
+}
+.mod-motifs{margin:11px 0 0;font-size:13px;color:var(--alert)}
+.mod-prec{margin:7px 0 0;padding-left:18px;font-size:13px;color:var(--muted)}
+.mod-prec li{margin:2px 0}
+
 @media (max-width:560px){
   .grid{grid-template-columns:1fr 1fr;gap:9px}
   .obj{padding:11px 12px}
@@ -803,7 +831,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.08-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -865,7 +893,10 @@ label .opt{font-weight:400;color:var(--faint)}
     essais: 0,
     ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
     fiches: {},           // fiches connues du lycée, par ISBN
-    occupe: false
+    occupe: false,
+    referent: false,      // rôle porté par la base, jamais par le navigateur
+    file: [],             // annonces signalées, pour le référent
+    signalementPour: null // annonce dont on est en train de choisir le motif
   };
 
   function esc(s) {
@@ -1049,12 +1080,26 @@ label .opt{font-weight:400;color:var(--faint)}
     });
   }
 
+  // `rpc` ne rend qu'une ligne ; les fonctions « returns table » en
+  // rendent plusieurs, et il ne faut surtout pas les tronquer.
+  function rpcListe(nom, params) {
+    return state.sb.rpc(nom, params || {}).then(function (r) {
+      if (r.error) throw r.error;
+      return r.data || [];
+    });
+  }
+
   // Les fonctions SQL lèvent des exceptions en français ; on les traduit
   // en messages utiles plutôt que d'afficher l'erreur brute.
   var MESSAGES = [
     ["crédits insuffisants", "Il vous faut 1 crédit. Déposez un objet en troc pour en gagner un."],
     ["déjà réservée",        "Trop tard — quelqu'un vient de la réserver."],
     ["introuvable",          "Cette annonce n'existe plus."],
+    ["en cours de vérification", "Un adulte doit d'abord vérifier cette annonce signalée."],
+    ["déjà signalée par vous", "Vous avez déjà signalé cette annonce."],
+    ["trop de signalements", "Trop de signalements en peu de temps. Réessayez demain."],
+    ["votre propre annonce", "On ne signale pas sa propre annonce."],
+    ["réservé au référent",  "Cette action est réservée à l'adulte référent."],
     ["signalée",             "Cette annonce attend une vérification."],
     ["déjà à vous",          "C'est votre propre annonce."],
     ["votre réservation",    "Cette réservation n'est pas la vôtre."],
@@ -1089,8 +1134,47 @@ label .opt{font-weight:400;color:var(--faint)}
         : null;
       state.horsLigne = null;
       return Promise.all([chargerFils(), chargerRecherches(), chargerFiches()])
+        .then(chargerModeration)
         .then(function () { render(); });
     });
+  }
+
+  /* ---------------- modération ---------------- */
+
+  // Le rôle de référent est vérifié par la base à chaque appel : ce que
+  // l'application en sait ne sert qu'à afficher l'onglet. Un élève qui
+  // forcerait `state.referent` dans sa console verrait une page vide et
+  // se ferait refuser toute décision.
+  function chargerModeration() {
+    if (!state.sb || !state.me) { state.referent = false; state.file = []; return Promise.resolve(); }
+    return rpc("est_referent")
+      .then(function (oui) {
+        state.referent = !!oui;
+        if (!oui) { state.file = []; return; }
+        return rpcListe("file_moderation").then(function (l) { state.file = l || []; });
+      })
+      .catch(function () { state.referent = false; state.file = []; });
+  }
+
+  function aTraiter() {
+    var n = 0;
+    for (var i = 0; i < state.file.length; i++) {
+      if (state.file[i].moderation === "masque") n++;
+    }
+    return n;
+  }
+
+  function moderer(id, decision) {
+    if (decision === "retirer" && !window.confirm(
+        "Supprimer définitivement cette annonce ?\n\n" +
+        "Elle disparaît pour tout le monde et l'élève n'en est pas prévenu " +
+        "par l'application : prévenez-le vous-même.")) return;
+    rpc("moderer_objet", { p_objet: id, p_decision: decision })
+      .then(charger)
+      .then(function () {
+        toast(decision === "retablir" ? "Annonce rétablie." : "Annonce supprimée.");
+      })
+      .catch(echec);
   }
 
   /* ---------------- fils de discussion ---------------- */
@@ -1438,9 +1522,41 @@ label .opt{font-weight:400;color:var(--faint)}
       .catch(echec);
   }
 
+  var MOTIFS = [
+    ["inapproprie", "Contenu déplacé ou blessant"],
+    ["interdit",    "Objet qui n'a rien à faire au lycée"],
+    ["prix",        "Prix abusif"],
+    ["faux",        "Annonce fausse ou trompeuse"],
+    ["autre",       "Autre raison"]
+  ];
+
+  // Signaler ne part plus au premier clic : masquer l'annonce d'un
+  // camarade mérite qu'on dise pourquoi, et le motif est ce qui permet
+  // au référent de trancher sans rouvrir toute l'histoire.
   function signaler(id) {
-    rpc("signaler_objet", { p_objet: id }).then(charger)
-      .then(function () { toast("Signalé. Un adulte référent va vérifier l'annonce."); }).catch(echec);
+    state.signalementPour = id;
+    if (state.fiche === id) renderFiche(); else ouvrirFiche(id);
+  }
+
+  function annulerSignalement() {
+    state.signalementPour = null;
+    renderFiche();
+  }
+
+  function envoyerSignalement(id, motif) {
+    var zone = document.getElementById("sig-precisions");
+    var precisions = zone ? zone.value : "";
+    state.signalementPour = null;
+    rpc("signaler_objet", { p_objet: id, p_motif: motif, p_precisions: precisions })
+      .then(function (issue) {
+        return charger().then(function () {
+          fermerFiche();
+          toast(issue === "deja_verifiee"
+            ? "Signalement transmis. Un adulte avait déjà vérifié cette annonce, elle reste visible."
+            : "Signalé. L'annonce est masquée le temps qu'un adulte la vérifie.");
+        });
+      })
+      .catch(function (e) { renderFiche(); echec(e); });
   }
 
   /* ---------------- rendu ---------------- */
@@ -1564,7 +1680,8 @@ label .opt{font-weight:400;color:var(--faint)}
     recherches:'<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>',
     deposer:   '<circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/>',
     messages:  '<path d="M4 5.5h16v11H9l-5 3.5v-3.5H4z"/>',
-    moi:       '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c1.2-3.6 4-5.4 7-5.4s5.8 1.8 7 5.4"/>'
+    moi:       '<circle cx="12" cy="8.5" r="3.6"/><path d="M5 20c1.2-3.6 4-5.4 7-5.4s5.8 1.8 7 5.4"/>',
+    moderation:'<path d="M12 3.2 19 6v5.6c0 4-2.8 7.3-7 8.8-4.2-1.5-7-4.8-7-8.8V6z"/><path d="M9.2 12l2 2 3.6-3.8"/>'
   };
 
   function nonLus() {
@@ -1582,9 +1699,11 @@ label .opt{font-weight:400;color:var(--faint)}
       { id: "catalogue",  nom: "Catalogue" },
       { id: "recherches", nom: "Recherchés" },
       { id: "deposer",    nom: "Déposer", plus: true },
-      { id: "messages",   nom: "Messages", badge: nonLus() },
-      { id: "moi",        nom: "Moi" }
+      { id: "messages",   nom: "Messages", badge: nonLus() }
     ];
+    // L'onglet n'existe que pour l'adulte référent.
+    if (state.referent) defs.push({ id: "moderation", nom: "Modérer", badge: aTraiter() });
+    defs.push({ id: "moi", nom: "Moi" });
     var html = "";
     for (var i = 0; i < defs.length; i++) {
       var d = defs[i];
@@ -1681,6 +1800,10 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function ouvrirFiche(id) {
+    // L'annonce peut avoir disparu entre l'affichage de la carte et le clic :
+    // le catalogue se met à jour en direct, et un référent vient peut-être de
+    // la supprimer. Sans ce contrôle, la fiche s'ouvrait vide.
+    if (!trouver(id)) { toast("Cette annonce n'existe plus."); return; }
     state.fiche = id;
     renderFiche();
     document.getElementById("fiche").hidden = false;
@@ -1690,6 +1813,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function fermerFiche() {
     state.fiche = null;
+    state.signalementPour = null;
     document.getElementById("fiche").hidden = true;
     document.body.style.overflow = "";
   }
@@ -1762,10 +1886,29 @@ label .opt{font-weight:400;color:var(--faint)}
         ligne("ISBN", o.isbn) +
         ligne("Retrait", "Au CDI") +
       "</dl>" +
-      (state.me && !suisProprio && !o.signale
-        ? '<button class="btn ghost" data-act="signaler" data-id="' + o.id + '" ' +
-          'style="width:100%;color:var(--faint)">Signaler cette annonce</button>'
-        : "");
+      blocSignalement(o, suisProprio);
+  }
+
+  function blocSignalement(o, suisProprio) {
+    if (!state.me || suisProprio || o.signale) return "";
+    if (state.signalementPour !== o.id) {
+      return '<button class="btn ghost" data-act="signaler" data-id="' + o.id + '" ' +
+             'style="width:100%;color:var(--faint)">Signaler cette annonce</button>';
+    }
+    var choix = "";
+    for (var i = 0; i < MOTIFS.length; i++) {
+      choix += '<button class="btn ghost motif" data-act="signaler-motif" data-id="' + o.id +
+               '" data-motif="' + MOTIFS[i][0] + '">' + esc(MOTIFS[i][1]) + "</button>";
+    }
+    return '<div class="signalement">' +
+      "<h3>Pourquoi signalez-vous cette annonce ?</h3>" +
+      '<p class="sub">L\'annonce sera masquée le temps qu\'un adulte du lycée la vérifie. ' +
+      "Votre pseudo n'est montré ni à l'élève concerné, ni aux autres.</p>" +
+      '<textarea id="sig-precisions" rows="2" maxlength="300" ' +
+      'placeholder="Précisions, si besoin (facultatif)"></textarea>' +
+      choix +
+      '<button class="btn ghost annuler-sig" data-act="signaler-annuler">Annuler</button>' +
+      "</div>";
   }
 
   function filtrer() {
@@ -2198,6 +2341,87 @@ label .opt{font-weight:400;color:var(--faint)}
     return html + "</div>";
   }
 
+  var MOTIF_NOM = {
+    inapproprie: "contenu déplacé", interdit: "objet interdit",
+    prix: "prix abusif", faux: "annonce trompeuse", autre: "autre raison"
+  };
+
+  function vueModeration() {
+    if (!state.referent) {
+      return '<div class="panel" style="margin:18px 0 0"><h2>Modération</h2>' +
+        '<p class="sub">Cette page est réservée à l\'adulte référent du casier.</p></div>';
+    }
+    var att = [], vus = [];
+    for (var i = 0; i < state.file.length; i++) {
+      (state.file[i].moderation === "masque" ? att : vus).push(state.file[i]);
+    }
+
+    var html = '<div class="panel" style="margin:18px 0 0">' +
+      "<h2>Modération</h2>" +
+      '<p class="sub">Une annonce signalée est masquée aussitôt, puis attend votre décision. ' +
+      "La rétablir la rend visible pour de bon : elle ne pourra plus être masquée " +
+      "par un nouveau signalement, ce qui empêche un élève de recommencer indéfiniment.</p></div>";
+
+    html += '<h2 class="section-title">À vérifier <span>' + att.length + "</span></h2>";
+    html += att.length
+      ? att.map(carteModeration).join("")
+      : '<div class="panel"><p class="sub">Rien en attente. Le casier est calme.</p></div>';
+
+    if (vus.length) {
+      html += '<h2 class="section-title">Déjà tranchées <span>' + vus.length + "</span></h2>";
+      html += vus.map(carteModeration).join("");
+    }
+    return html;
+  }
+
+  function carteModeration(f) {
+    // Plusieurs élèves peuvent signaler pour la même raison : on compte
+    // plutôt que de répéter la ligne.
+    var compte = {}, ordre = [];
+    (f.motifs || []).forEach(function (m) {
+      if (!compte[m]) { compte[m] = 0; ordre.push(m); }
+      compte[m]++;
+    });
+    var liste = ordre.map(function (m) {
+      return esc(MOTIF_NOM[m] || m) + (compte[m] > 1 ? " ×" + compte[m] : "");
+    }).join(", ");
+
+    var prec = (f.precisions || []).map(function (x) {
+      return "<li>" + esc(x) + "</li>";
+    }).join("");
+
+    var valeur = f.mode === "vente" ? prixFmt(Number(f.prix) || 0)
+               : f.mode === "don"   ? "don" : "troc";
+    var nb = Number(f.nb) || 0;
+    var enAttente = f.moderation === "masque";
+
+    return '<div class="panel moderation">' +
+      '<div class="mod-tete">' +
+        (f.photo
+          ? '<img class="mod-photo" src="' + esc(urlPhoto(f.photo)) +
+            '" alt="" onerror="this.remove()">'
+          : "") +
+        "<div><h3>" + esc(f.titre) + "</h3>" +
+        '<p class="sub">' + esc(f.proprietaire) +
+          (f.classe ? " · " + esc(f.classe) : "") +
+          " · " + esc(catNom(f.categorie)) + " · " + esc(valeur) +
+          (f.statut === "reserve" ? " · réservé" : "") + "</p></div>" +
+      "</div>" +
+      (f.note ? '<p class="note">' + esc(f.note) + "</p>" : "") +
+      '<p class="mod-motifs"><b>' + nb + " signalement" + (nb > 1 ? "s" : "") +
+        "</b> — " + liste + "</p>" +
+      (prec ? '<ul class="mod-prec">' + prec + "</ul>" : "") +
+      (enAttente
+        ? '<div class="fiche-actions">' +
+            '<button class="btn primary" data-act="moderer" data-id="' + f.objet +
+              '" data-decision="retablir">Rétablir l\'annonce</button>' +
+            '<button class="btn ghost" data-act="moderer" data-id="' + f.objet +
+              '" data-decision="retirer">Supprimer l\'annonce</button>' +
+          "</div>"
+        : '<p class="note" style="margin:0">Rétablie. Elle reste visible même si elle est de nouveau signalée.</p>') +
+      "</div>";
+  }
+
   function vueMoi() {
     if (!state.me) {
       return '<div class="panel"><h2>Votre compte</h2>' +
@@ -2249,6 +2473,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (state.onglet === "recherches") v.innerHTML = vueRecherches();
     else if (state.onglet === "deposer")    v.innerHTML = vueDeposer();
     else if (state.onglet === "messages")   v.innerHTML = vueMessages();
+    else if (state.onglet === "moderation") v.innerHTML = vueModeration();
     else                                    v.innerHTML = vueMoi();
 
     var q = document.getElementById("q");
@@ -3258,6 +3483,8 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "confirmer") confirmer(id);
     else if (act === "retirer") { retirer(id); fermerFiche(); }
     else if (act === "signaler") signaler(id);
+    else if (act === "signaler-motif") envoyerSignalement(id, b.getAttribute("data-motif"));
+    else if (act === "signaler-annuler") annulerSignalement();
     else if (act === "ecrire") ouvrirDiscussion(id);
   });
 
@@ -3366,6 +3593,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "ecrire") ouvrirDiscussion(id);
     else if (act === "retour-messages") { state.filOuvert = null; render(); }
     else if (act === "reinitialiser") reinitialiser();
+    else if (act === "moderer") moderer(id, b.getAttribute("data-decision"));
   });
 
   /* ---------------- démarrage ---------------- */
