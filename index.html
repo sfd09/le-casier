@@ -609,6 +609,19 @@ label .opt{font-weight:400;color:var(--faint)}
 .panel .sub{margin:0 0 18px;color:var(--muted);font-size:14px;max-width:62ch}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 .form-grid .full{grid-column:1/-1}
+.depot-scan{
+  background:var(--accent-soft);padding:13px 14px;border-radius:12px;
+  border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);
+}
+.depot-scan .aide-scan{color:var(--muted)}
+/* Sur un écran large, le bouton garde sa taille naturelle à côté du
+   champ. Sur téléphone il passe dessous, et prend alors toute la ligne :
+   c'est l'action principale du formulaire, pas un bouton d'appoint. */
+.depot-scan .photo-champ{gap:9px}
+.depot-scan .photo-champ .btn{flex:0 0 auto;padding:11px 18px}
+@media (max-width:560px){
+  .depot-scan .photo-champ .btn{flex:1 1 100%}
+}
 .form-foot{
   display:flex;align-items:center;gap:14px;flex-wrap:wrap;
   margin-top:18px;padding-top:16px;border-top:1px solid var(--line);
@@ -845,7 +858,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.09-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX = 40; // € — fixé par la Maison des lycéens, pas par les élèves
 
   var CATEGORIES = [
@@ -2064,6 +2077,17 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="modepick">' + pick + "</div>" +
         avis +
         '<div class="form-grid" style="margin-top:18px">' +
+          '<div class="full depot-scan"><label for="d-isbn">Code-barres ' +
+            '<span class="opt">(le plus rapide)</span></label>' +
+            '<div class="photo-champ">' +
+              '<input id="d-isbn" maxlength="17" inputmode="numeric" ' +
+                'placeholder="Scannez, ou tapez les chiffres" style="flex:1 1 150px;width:auto">' +
+              '<button type="button" class="btn primary" data-scan="ouvrir">Scanner</button>' +
+            "</div>" +
+            '<p class="aide-scan">Commencez par ici — livre, calculatrice, fournitures. ' +
+            "Si l'article est déjà connu du casier, les champs ci-dessous se remplissent seuls " +
+            "et vous n'avez plus qu'à publier. Sinon, remplissez-les : votre saisie deviendra " +
+            "sa fiche pour tout le lycée.</p></div>" +
           '<div class="full"><label for="d-titre">Objet</label>' +
             '<input id="d-titre" required maxlength="90" placeholder="Calculatrice NumWorks"></div>' +
           '<div><label for="d-auteur">Auteur, marque ou modèle</label>' +
@@ -2073,13 +2097,6 @@ label .opt{font-weight:400;color:var(--faint)}
           '<div><label for="d-mat">Matière <span class="opt">(si concerné)</span></label><select id="d-mat">' + mats + "</select></div>" +
           '<div><label for="d-niv">Niveau <span class="opt">(si concerné)</span></label><select id="d-niv">' + nivs + "</select></div>" +
           '<div><label for="d-etat">État</label><select id="d-etat">' + ets + "</select></div>" +
-          '<div><label for="d-isbn">Code-barres <span class="opt">(tout article)</span></label>' +
-            '<div class="photo-champ">' +
-              '<input id="d-isbn" maxlength="17" inputmode="numeric" placeholder="9782070413331" style="flex:1 1 130px;width:auto">' +
-              '<button type="button" class="btn ghost" data-scan="ouvrir">Scanner</button>' +
-            "</div>" +
-            '<p class="aide-scan">Scannez le code-barres de n\'importe quel article — livre, calculatrice, fournitures. ' +
-            "S'il est déjà connu, les champs se remplissent seuls ; sinon votre saisie deviendra sa fiche pour tout le lycée.</p></div>" +
           '<div class="full"><label for="d-note">Précisions <span class="opt">(facultatif)</span></label>' +
             '<textarea id="d-note" maxlength="200" placeholder="Chargeur inclus, quelques rayures sur la coque."></textarea></div>' +
           '<div class="full"><label>Photo <span class="opt">(vivement conseillée)</span></label>' +
