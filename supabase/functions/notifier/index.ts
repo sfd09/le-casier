@@ -124,7 +124,10 @@ async function pousser(abo: { endpoint: string; p256dh: string; auth: string }, 
       "Content-Encoding": "aes128gcm",
       "Content-Type": "application/octet-stream",
       "TTL": "86400",
-      "Urgency": "normal",
+      // iOS regroupe et diffère les notifications pour économiser la
+      // batterie. « high » demande une remise sans attente : c'est ce
+      // qui distingue un message d'une lettre d'information.
+      "Urgency": "high",
     },
     body: corps,
   });
