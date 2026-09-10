@@ -872,7 +872,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -2585,6 +2585,9 @@ label .opt{font-weight:400;color:var(--faint)}
       return '<h2 class="section-title">Messages</h2>' +
         '<div class="empty"><p>Aucune discussion pour l\'instant.</p>' +
         "<p style=\"font-size:13px\">Ouvrez une annonce et touchez « Écrire » pour convenir d'un rendez-vous.</p>" +
+        '<p style="font-size:12px;color:var(--faint)">Connectée en <b>' + esc(state.me.pseudo) +
+        (state.me.classe ? " · " + esc(state.me.classe) : "") +
+        "</b>. Les conversations d'un autre compte n'apparaissent pas ici.</p>" +
         '<button class="btn ghost" data-act="aller-catalogue">Parcourir le catalogue</button></div>';
     }
 
@@ -4103,6 +4106,10 @@ label .opt{font-weight:400;color:var(--faint)}
     state.filOuvert = null;
     render();
     if (state.onglet === "moi") rafraichirPush().then(render);
+    // Les fils sont relus à l'ouverture de l'onglet : un chargement raté
+    // au démarrage laissait sinon la liste vide jusqu'au prochain
+    // lancement, alors que les conversations existaient.
+    if (state.onglet === "messages") chargerFils().then(render);
     window.scrollTo({ top: 0, behavior: "instant" });
   });
 
