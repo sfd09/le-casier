@@ -872,7 +872,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.10-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1562,6 +1562,40 @@ label .opt{font-weight:400;color:var(--faint)}
     }
     if (Notification.permission === "denied") return { possible: false, etat: "refuse" };
     return { possible: true, etat: Notification.permission };
+  }
+
+  // Le compteur rouge sur l'icône est un mécanisme distinct des
+  // notifications : il ne vient pas du serveur, l'application le pose
+  // elle-même. iOS ne l'accorde qu'à une application installée.
+  function poserPastille() {
+    var n = nonLus();
+    try {
+      if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n);
+      else if (navigator.clearAppBadge) navigator.clearAppBadge();
+    } catch (e) {}
+  }
+
+  // Vérifie que l'autorisation et l'affichage fonctionnent, sans faire
+  // intervenir le serveur : si ceci s'affiche et qu'un vrai message ne
+  // sonne pas, la panne est dans l'expédition, pas dans le téléphone.
+  function essaiNotification() {
+    if (Notification.permission !== "granted") {
+      toast("Activez d'abord les notifications.");
+      return;
+    }
+    navigator.serviceWorker.ready.then(function (reg) {
+      return reg.showNotification("Le Casier — essai", {
+        body: "Si vous lisez ceci, l'affichage fonctionne sur cet appareil.",
+        icon: "./icones/icone-192.png",
+        badge: "./icones/icone-192.png",
+        tag: "essai"
+      });
+    }).then(function () {
+      try { if (navigator.setAppBadge) navigator.setAppBadge(1); } catch (e) {}
+      toast("Notification d'essai envoyée. Verrouillez l'écran pour la voir arriver.");
+    }).catch(function () {
+      toast("L'affichage a échoué sur cet appareil.");
+    });
   }
 
   function rafraichirPush() {
@@ -2824,9 +2858,12 @@ label .opt{font-weight:400;color:var(--faint)}
         ? "Cet appareil vous préviendra quand un élève répondra à un message."
         : "Sans cela, il faut rouvrir l'application pour savoir si quelqu'un a répondu.") +
       "</p></div>" +
-      '<button class="btn ' + (p.actif ? "ghost" : "primary") + '" data-act="' +
-        (p.actif ? "push-off" : "push-on") + '">' +
-        (p.actif ? "Désactiver" : "Activer") + "</button></div>";
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (p.actif ? '<button class="btn ghost" data-act="push-essai">Tester</button>' : "") +
+        '<button class="btn ' + (p.actif ? "ghost" : "primary") + '" data-act="' +
+          (p.actif ? "push-off" : "push-on") + '">' +
+          (p.actif ? "Désactiver" : "Activer") + "</button>" +
+      "</div></div>";
   }
 
   function vueMoi() {
@@ -2944,6 +2981,7 @@ label .opt{font-weight:400;color:var(--faint)}
     if (state.photo) apercuPhoto();
 
     renderStatus();
+    poserPastille();
     if (state.fiche) renderFiche();
   }
 
@@ -4135,6 +4173,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "reinitialiser") reinitialiser();
     else if (act === "push-on") activerPush();
     else if (act === "push-off") desactiverPush();
+    else if (act === "push-essai") essaiNotification();
     else if (act === "moderer") moderer(id, b.getAttribute("data-decision"));
     else if (act === "supprimer-fiche") supprimerFiche(b.getAttribute("data-code"));
   });

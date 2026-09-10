@@ -5,7 +5,7 @@
 // première réponse reçue, définitivement. Seuls les fichiers de
 // l'application — qui ne changent qu'à une publication — sont cachés.
 
-const VERSION = "casier-20260910-1";
+const VERSION = "casier-20260911-1";
 const COQUILLE = [
   "./",
   "./index.html",
@@ -98,11 +98,25 @@ self.addEventListener("push", (e) => {
     renotify: true,
     data: { fil: d.fil || null },
   };
-  e.waitUntil(self.registration.showNotification(titre, options));
+  e.waitUntil(
+    Promise.all([
+      self.registration.showNotification(titre, options),
+      // La pastille chiffrée de l'icône est posée ici aussi : au moment
+      // du push, l'application est le plus souvent fermée.
+      (async () => {
+        try {
+          if (!navigator.setAppBadge) return;
+          const n = await self.registration.getNotifications();
+          await navigator.setAppBadge(Math.max(1, n.length));
+        } catch (_) {}
+      })(),
+    ])
+  );
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  try { if (navigator.clearAppBadge) navigator.clearAppBadge(); } catch (_) {}
   const fil = e.notification.data && e.notification.data.fil;
   const cible = fil ? "./?fil=" + encodeURIComponent(fil) : "./";
 
