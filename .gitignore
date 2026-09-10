@@ -1,1 +1,4 @@
 .DS_Store
+
+# clés privées — ne doivent jamais partir sur GitHub
+secrets/

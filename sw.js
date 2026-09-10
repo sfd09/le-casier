@@ -5,7 +5,7 @@
 // première réponse reçue, définitivement. Seuls les fichiers de
 // l'application — qui ne changent qu'à une publication — sont cachés.
 
-const VERSION = "casier-20260909-7";
+const VERSION = "casier-20260910-1";
 const COQUILLE = [
   "./",
   "./index.html",
@@ -72,6 +72,50 @@ self.addEventListener("fetch", (e) => {
         }
         return rep;
       });
+    })
+  );
+});
+
+// ---------------------------------------------------------------------
+//  Notifications
+//  Le service worker les reçoit même application fermée : c'est tout
+//  l'intérêt, et c'est pourquoi ce code vit ici et non dans la page.
+// ---------------------------------------------------------------------
+
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { corps: e.data && e.data.text() }; }
+
+  const titre = d.titre || "Le Casier";
+  const options = {
+    body: [d.corps, d.article && "\u00e0 propos de \u00ab " + d.article + " \u00bb"]
+            .filter(Boolean).join("\n"),
+    icon: "./icones/icone-192.png",
+    badge: "./icones/icone-192.png",
+    // Une seule notification par fil : dix réponses ne doivent pas
+    // remplir l'écran de verrouillage de dix lignes.
+    tag: d.fil ? "fil-" + d.fil : "casier",
+    renotify: true,
+    data: { fil: d.fil || null },
+  };
+  e.waitUntil(self.registration.showNotification(titre, options));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const fil = e.notification.data && e.notification.data.fil;
+  const cible = fil ? "./?fil=" + encodeURIComponent(fil) : "./";
+
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((fenetres) => {
+      // Rouvrir une fenêtre déjà ouverte plutôt qu'en empiler une autre.
+      for (const f of fenetres) {
+        if (f.url.includes("/le-casier") && "focus" in f) {
+          if (fil && "navigate" in f) f.navigate(cible).catch(() => {});
+          return f.focus();
+        }
+      }
+      return self.clients.openWindow(cible);
     })
   );
 });

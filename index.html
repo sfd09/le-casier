@@ -530,6 +530,14 @@ label .opt{font-weight:400;color:var(--faint)}
 .resume p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--muted)}
 .resume .prov{display:block;margin-top:8px;font-size:11px;color:var(--faint)}
 .auteur-carte{color:var(--muted)!important;font-weight:500}
+.reglage{
+  display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;
+  padding:14px 16px;margin:0 0 14px;
+}
+.reglage b{font-size:14px;font-weight:600}
+.reglage p{margin:3px 0 0;font-size:13px;color:var(--muted);line-height:1.45;max-width:46ch}
+.reglage .btn{flex:none}
 .fiche-actions .btn{flex:1 1 150px;padding:12px 16px;font-size:14px}
 
 /* ---------- messagerie ---------- */
@@ -860,7 +868,11 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- référentiel ---------------- */
 
-  var VERSION_APP = "2026.09.09-7";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  // Clé publique VAPID : publique par nature, la privée vit dans les
+  // secrets de la fonction serveur.
+  var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
+
+  var VERSION_APP = "2026.09.10-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -968,6 +980,7 @@ label .opt{font-weight:400;color:var(--faint)}
     suggestion: null,            // article courant choisi d'un clic
     dernierIsbn: null,
     essais: 0,
+    push: { possible: false, actif: false, etat: "inconnu" },
     ficheTrouvee: null,   // métadonnées du dernier ISBN recherché
     fiches: {},           // fiches connues du lycée, par ISBN
     occupe: false,
@@ -1515,6 +1528,109 @@ label .opt{font-weight:400;color:var(--faint)}
         try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
         location.replace(location.pathname + "?n=" + Date.now());
       });
+  }
+
+  /* ---------------- notifications ---------------- */
+
+  function base64VersOctets(b64) {
+    var p = "=".repeat((4 - (b64.length % 4)) % 4);
+    var brut = atob((b64 + p).replace(/-/g, "+").replace(/_/g, "/"));
+    var t = new Uint8Array(brut.length);
+    for (var i = 0; i < brut.length; i++) t[i] = brut.charCodeAt(i);
+    return t;
+  }
+
+  function octetsVersBase64(buf) {
+    var o = new Uint8Array(buf), s = "";
+    for (var i = 0; i < o.length; i++) s += String.fromCharCode(o[i]);
+    return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  // Sur iPhone, les notifications n'existent QUE pour une application
+  // installée sur l'écran d'accueil : Safari ne les propose pas.
+  function installee() {
+    return window.matchMedia("(display-mode: standalone)").matches ||
+           window.navigator.standalone === true;
+  }
+
+  function etatPush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      return { possible: false, etat: "navigateur" };
+    }
+    if (!installee() && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      return { possible: false, etat: "ios-non-installee" };
+    }
+    if (Notification.permission === "denied") return { possible: false, etat: "refuse" };
+    return { possible: true, etat: Notification.permission };
+  }
+
+  function rafraichirPush() {
+    var e = etatPush();
+    state.push.possible = e.possible;
+    state.push.etat = e.etat;
+    if (!e.possible) { state.push.actif = false; return Promise.resolve(); }
+    return navigator.serviceWorker.ready
+      .then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (ab) { state.push.actif = !!ab; })
+      .catch(function () { state.push.actif = false; });
+  }
+
+  function activerPush() {
+    if (!state.me) { toast("Créez votre compte pour être prévenue."); return; }
+    // La demande d'autorisation DOIT partir d'un geste de l'utilisateur :
+    // appelée au chargement, elle est refusée d'office par le navigateur.
+    Notification.requestPermission()
+      .then(function (perm) {
+        if (perm !== "granted") throw new Error("permission " + perm);
+        return navigator.serviceWorker.ready;
+      })
+      .then(function (reg) {
+        return reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: base64VersOctets(CLE_PUSH)
+        });
+      })
+      .then(function (ab) {
+        var j = ab.toJSON ? ab.toJSON() : {};
+        var cles = j.keys || {};
+        return rpc("enregistrer_push", {
+          p_endpoint: ab.endpoint,
+          p_p256dh: cles.p256dh || octetsVersBase64(ab.getKey("p256dh")),
+          p_auth:   cles.auth   || octetsVersBase64(ab.getKey("auth")),
+          p_appareil: navigator.platform || ""
+        });
+      })
+      .then(rafraichirPush)
+      .then(function () { render(); toast("Notifications activées sur cet appareil."); })
+      .catch(function (e) {
+        rafraichirPush().then(render);
+        toast(/denied|permission/.test(String(e && e.message))
+          ? "Autorisation refusée. Réactivez-la dans les réglages du navigateur."
+          : "Les notifications n'ont pas pu être activées.");
+      });
+  }
+
+  function desactiverPush() {
+    navigator.serviceWorker.ready
+      .then(function (reg) { return reg.pushManager.getSubscription(); })
+      .then(function (ab) {
+        if (!ab) return null;
+        var url = ab.endpoint;
+        return ab.unsubscribe().then(function () {
+          return rpc("retirer_push", { p_endpoint: url }).catch(function () {});
+        });
+      })
+      .then(rafraichirPush)
+      .then(function () { render(); toast("Notifications désactivées sur cet appareil."); })
+      .catch(function () { toast("La désactivation n'a pas abouti."); });
+  }
+
+  // Le service worker demande d'ouvrir un fil précis via ?fil=…
+  function filDemande() {
+    var m = location.search.match(/[?&]fil=([^&]+)/);
+    if (!m) return null;
+    history.replaceState(null, "", location.pathname);
+    return decodeURIComponent(m[1]);
   }
 
   function deconnecter() {
@@ -2678,6 +2794,41 @@ label .opt{font-weight:400;color:var(--faint)}
       "</div>";
   }
 
+  function blocNotifications() {
+    // Recalculé à chaque rendu : l'autorisation peut être accordée ou
+    // retirée depuis les réglages du navigateur, et la PWA installée
+    // entre-temps — rien de tout cela ne prévient l'application.
+    var e = etatPush();
+    state.push.possible = e.possible;
+    state.push.etat = e.etat;
+    var p = state.push;
+
+    if (p.etat === "ios-non-installee") {
+      return '<div class="reglage"><div><b>Être prévenue des réponses</b>' +
+        "<p>Sur iPhone, les notifications ne fonctionnent qu'une fois l'application " +
+        "installée sur l'écran d'accueil : bouton <b>Partager</b> dans Safari, " +
+        "puis <b>Sur l'écran d'accueil</b>. Revenez ici ensuite.</p></div></div>";
+    }
+    if (p.etat === "navigateur") {
+      return '<div class="reglage"><div><b>Être prévenue des réponses</b>' +
+        "<p>Ce navigateur ne sait pas recevoir de notifications.</p></div></div>";
+    }
+    if (p.etat === "refuse") {
+      return '<div class="reglage"><div><b>Être prévenue des réponses</b>' +
+        "<p>Vous avez refusé les notifications pour ce site. Il faut les réautoriser " +
+        "dans les réglages du navigateur — l'application ne peut plus le demander.</p></div></div>";
+    }
+
+    return '<div class="reglage"><div><b>Être prévenue des réponses</b>' +
+      "<p>" + (p.actif
+        ? "Cet appareil vous préviendra quand un élève répondra à un message."
+        : "Sans cela, il faut rouvrir l'application pour savoir si quelqu'un a répondu.") +
+      "</p></div>" +
+      '<button class="btn ' + (p.actif ? "ghost" : "primary") + '" data-act="' +
+        (p.actif ? "push-off" : "push-on") + '">' +
+        (p.actif ? "Désactiver" : "Activer") + "</button></div>";
+  }
+
   function vueMoi() {
     if (!state.me) {
       return '<div class="panel"><h2>Votre compte</h2>' +
@@ -2699,6 +2850,7 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="circuit" style="--sw:var(--ok)"><b>' + (m.dons || 0) + "</b>" +
           "<p>objets donnés</p></div>" +
       "</div>" +
+      blocNotifications() +
       '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
         (estConnecte() ? '<button class="btn ghost" data-act="deconnexion">Se déconnecter</button>' : "") +
         '<button type="button" class="deconnexion" data-act="reinitialiser">Remettre l\'application à zéro</button>' +
@@ -3912,6 +4064,7 @@ label .opt{font-weight:400;color:var(--faint)}
     state.onglet = b.getAttribute("data-onglet");
     state.filOuvert = null;
     render();
+    if (state.onglet === "moi") rafraichirPush().then(render);
     window.scrollTo({ top: 0, behavior: "instant" });
   });
 
@@ -3980,6 +4133,8 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "ecrire") ouvrirDiscussion(id);
     else if (act === "retour-messages") { state.filOuvert = null; render(); }
     else if (act === "reinitialiser") reinitialiser();
+    else if (act === "push-on") activerPush();
+    else if (act === "push-off") desactiverPush();
     else if (act === "moderer") moderer(id, b.getAttribute("data-decision"));
     else if (act === "supprimer-fiche") supprimerFiche(b.getAttribute("data-code"));
   });
@@ -4080,6 +4235,16 @@ label .opt{font-weight:400;color:var(--faint)}
       .then(function () {
         state.pret = true;
         ecouterChangements();
+        return rafraichirPush();
+      })
+      .then(function () {
+        // Notification touchée : on ouvre directement la conversation.
+        var f = filDemande();
+        if (f && state.me) {
+          state.onglet = "messages";
+          state.filOuvert = f;
+          return chargerMessages(f).then(function () { render(); glisserEnBas(); });
+        }
         render();
       })
       .catch(function (e) {
