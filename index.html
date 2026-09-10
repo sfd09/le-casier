@@ -872,7 +872,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1313,6 +1313,15 @@ label .opt{font-weight:400;color:var(--faint)}
       .catch(function () { state.fils = []; });
   }
 
+  // Ouvrir une conversation vaut lecture : on l'inscrit avant de
+  // rafraîchir, pour que la pastille tombe tout de suite.
+  function ouvrirFil(id) {
+    return rpc("marquer_lu", { p_fil: id }).catch(function () {})
+      .then(function () { return chargerMessages(id); })
+      .then(chargerFils)
+      .then(function () { render(); glisserEnBas(); });
+  }
+
   function chargerMessages(filId) {
     return state.sb.from("messages").select("*").eq("fil", filId)
       .order("envoye_le", { ascending: true })
@@ -1326,9 +1335,9 @@ label .opt{font-weight:400;color:var(--faint)}
         fermerFiche();
         state.onglet = "messages";
         state.filOuvert = id;
-        return chargerFils().then(function () { return chargerMessages(id); });
+        return chargerFils().then(function () { return ouvrirFil(id); });
       })
-      .then(function () { render(); window.scrollTo(0, 0); })
+      .then(function () { window.scrollTo(0, 0); })
       .catch(echec);
   }
 
@@ -2049,13 +2058,20 @@ label .opt{font-weight:400;color:var(--faint)}
     moderation:'<path d="M12 3.2 19 6v5.6c0 4-2.8 7.3-7 8.8-4.2-1.5-7-4.8-7-8.8V6z"/><path d="M9.2 12l2 2 3.6-3.8"/>'
   };
 
+  // Un fil est « à voir » quand son dernier message n'est pas de moi ET
+  // qu'il est postérieur à ma dernière ouverture. Sans cette seconde
+  // condition, lire ne suffisait pas : il fallait répondre.
+  function aVoir(f) {
+    if (!state.me || !f.dernierAuteur) return false;
+    if (f.dernierAuteur === state.me.cle) return false;
+    var lu = (f.proprietaire === state.me.cle) ? f.lu_proprietaire : f.lu_demandeur;
+    if (!lu) return true;
+    return new Date(f.maj).getTime() > new Date(lu).getTime();
+  }
+
   function nonLus() {
-    // Un fil compte comme « à voir » quand le dernier mot n'est pas le mien.
     var n = 0;
-    for (var i = 0; i < state.fils.length; i++) {
-      var f = state.fils[i];
-      if (f.dernierAuteur && state.me && f.dernierAuteur !== state.me.cle) n++;
-    }
+    for (var i = 0; i < state.fils.length; i++) if (aVoir(state.fils[i])) n++;
     return n;
   }
 
@@ -2598,7 +2614,7 @@ label .opt{font-weight:400;color:var(--faint)}
       var o = trouver(f.objet) || {};
       var autre = (f.proprietaire === state.me.cle) ? f.demandeur : f.proprietaire;
       var m = state.membres[autre] || {};
-      var aVoir = f.dernierAuteur && f.dernierAuteur !== state.me.cle;
+      var neuf = aVoir(f);
       html +=
         '<button class="fil" data-fil="' + f.id + '" style="--sw:' + sw(o.cat) + '">' +
           '<span class="miniature">' +
@@ -2612,7 +2628,7 @@ label .opt{font-weight:400;color:var(--faint)}
               (m.classe ? " · " + esc(m.classe) : "") + "</span>" +
             '<span class="apercu">' + (f.apercu ? esc(f.apercu) : "Aucun message") + "</span>" +
           "</span>" +
-          (aVoir ? '<i class="pastille" style="position:static">1</i>' : "") +
+          (neuf ? '<i class="pastille" style="position:static">1</i>' : "") +
         "</button>";
     }
     return html + "</div>";
@@ -4129,7 +4145,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var fil = ev.target.closest("[data-fil]");
     if (fil) {
       state.filOuvert = fil.getAttribute("data-fil");
-      chargerMessages(state.filOuvert).then(function () { render(); glisserEnBas(); });
+      ouvrirFil(state.filOuvert);
       return;
     }
 
@@ -4289,7 +4305,7 @@ label .opt{font-weight:400;color:var(--faint)}
         if (f && state.me) {
           state.onglet = "messages";
           state.filOuvert = f;
-          return chargerMessages(f).then(function () { render(); glisserEnBas(); });
+          return ouvrirFil(f);
         }
         render();
       })
