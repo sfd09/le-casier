@@ -148,10 +148,15 @@ Deno.serve(async (req) => {
 
   try {
     const recu = await req.json().catch(() => ({}));
-    // Le webhook envoie { type, table, record }. On accepte aussi un
-    // appel direct { fil, auteur, texte } pour pouvoir tester à la main.
-    const m = recu.record ?? recu;
-    if (!m?.fil || !m?.auteur) return repondre({ ignore: "message incomplet" });
+    const envoye = recu.record ?? recu;
+    if (!envoye?.id) return repondre({ ignore: "message incomplet" });
+
+    // On relit le message dans la base au lieu de croire l'appelant.
+    // La fonction est joignable avec la clé publique : sans cela, on
+    // pourrait lui faire expédier n'importe quel texte à n'importe qui.
+    const { data: m } = await db.from("messages")
+      .select("fil, auteur, texte").eq("id", envoye.id).maybeSingle();
+    if (!m) return repondre({ ignore: "message inconnu" });
 
     const { data: fil } = await db.from("fils")
       .select("proprietaire, demandeur, objet").eq("id", m.fil).maybeSingle();
