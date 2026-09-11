@@ -889,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-5";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1806,11 +1806,31 @@ label .opt{font-weight:400;color:var(--faint)}
     }).catch(echec);
   }
 
+  function mesDemandes() {
+    if (!state.me) return 0;
+    var n = 0;
+    for (var i = 0; i < state.recherches.length; i++) {
+      if (state.recherches[i].demandeur === state.me.cle) n++;
+    }
+    return n;
+  }
+
   function confirmer(id) {
     var o = trouver(id);
+    var avant = mesDemandes();
     rpc("confirmer_echange", { p_objet: id }).then(charger).then(function () {
-      if (o && o.mode === "don") toast("C'est noté. Un don de plus au compteur de " + o.proprietaire + ".");
-      else toast("Échange confirmé.");
+      // Une demande retirée sans le dire donnerait l'impression d'une
+      // disparition : on l'annonce, c'est une conséquence de son geste.
+      var retirees = avant - mesDemandes();
+      if (retirees > 0) {
+        toast(retirees > 1
+          ? "Échange confirmé. Vos " + retirees + " demandes correspondantes ont été retirées."
+          : "Échange confirmé. Votre demande correspondante a été retirée.");
+      } else if (o && o.mode === "don") {
+        toast("C'est noté. Un don de plus au compteur de " + o.proprietaire + ".");
+      } else {
+        toast("Échange confirmé.");
+      }
     }).catch(echec);
   }
 
@@ -2507,7 +2527,8 @@ label .opt{font-weight:400;color:var(--faint)}
         "</div>" +
         '<div class="form-foot">' +
           "<p>Renseignez la catégorie et la matière : c'est sur elles que repose l'alerte. " +
-          "Une demande trop vague ne trouvera rien.</p>" +
+          "Une demande trop vague ne trouvera rien. Elle se retire d'elle-même " +
+          "le jour où vous confirmez avoir reçu l'objet.</p>" +
           '<button class="btn primary" type="submit">Publier ma demande</button>' +
         "</div>" +
       "</form></div>"
