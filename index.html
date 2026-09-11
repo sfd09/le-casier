@@ -530,6 +530,23 @@ label .opt{font-weight:400;color:var(--faint)}
 .resume p{margin:10px 0 0;font-size:14px;line-height:1.55;color:var(--muted)}
 .resume .prov{display:block;margin-top:8px;font-size:11px;color:var(--faint)}
 .auteur-carte{color:var(--muted)!important;font-weight:500}
+
+/* Une demande n'est pas une offre : le pointillé dit le manque. */
+.obj.demande .vignette.creux{
+  background:none;
+  border:2px dashed color-mix(in srgb,var(--sw) 45%,var(--line-strong));
+  box-shadow:none;
+  flex-direction:column;gap:6px;
+}
+.obj.demande .vignette .etiquette{
+  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--sw);background:color-mix(in srgb,var(--sw) 14%,transparent);
+  padding:3px 9px;border-radius:999px;
+}
+.obj.demande{cursor:default}
+.obj .cherche{
+  font-size:13px;font-weight:700;color:var(--sw);
+}
 .reglage{
   display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;
   background:var(--surface);border:1px solid var(--line);border-radius:10px;
@@ -872,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-5";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -2110,7 +2127,6 @@ label .opt{font-weight:400;color:var(--faint)}
   function renderNav() {
     var defs = [
       { id: "catalogue",  nom: "Catalogue" },
-      { id: "recherches", nom: "Recherchés" },
       { id: "deposer",    nom: "Déposer", plus: true },
       { id: "messages",   nom: "Messages", badge: nonLus() }
     ];
@@ -2324,11 +2340,57 @@ label .opt{font-weight:400;color:var(--faint)}
       "</div>";
   }
 
+  // Les demandes se filtrent comme les annonces : une recherche sur
+  // « SES » doit trouver aussi bien ce qu'on offre que ce qu'on réclame.
+  function filtrerDemandes() {
+    if (state.filtre.mode === "gratuit" || state.filtre.mode === "vente") return [];
+    var q = state.filtre.q.toLowerCase().trim();
+    return state.recherches.filter(function (r) {
+      if (state.filtre.cat && r.categorie !== state.filtre.cat) return false;
+      if (state.filtre.niveau && r.niveau !== state.filtre.niveau) return false;
+      if (q) {
+        var foin = (r.titre + " " + (r.matiere || "") + " " + (r.note || "") + " " +
+                    catNom(r.categorie)).toLowerCase();
+        if (foin.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  // Une demande n'a ni photo ni prix : lui donner l'allure d'une annonce
+  // ferait croire à un objet disponible. Le cadre en pointillés dit
+  // qu'il s'agit d'un manque, pas d'une offre.
+  function carteDemande(r) {
+    var dem = state.membres[r.demandeur] || {};
+    var mien = state.me && r.demandeur === state.me.cle;
+    return (
+      '<article class="obj demande" style="--sw:' + sw(r.categorie || "autre") + '">' +
+        '<div class="vignette creux">' +
+          '<span class="etiquette">Recherché</span>' +
+          "<span class=\"repli\">" + esc(catNom(r.categorie)) + "</span>" +
+        "</div>" +
+        '<div class="obj-corps">' +
+          '<span class="cherche">Recherché</span>' +
+          "<h3>" + esc(r.titre) + "</h3>" +
+          '<span class="sous">' + esc([r.matiere, r.niveau].filter(Boolean).join(" · ") ||
+            ("par " + (dem.pseudo || "un élève"))) + "</span>" +
+          (mien
+            ? '<button class="btn ghost" data-retirer-recherche="' + r.id + '" ' +
+              'style="margin-top:7px;font-size:12px;padding:6px 10px">Retirer ma demande</button>'
+            : '<button class="btn ghost" data-act="aller-depot" ' +
+              'style="margin-top:7px;font-size:12px;padding:6px 10px">J\'en ai un</button>') +
+        "</div>" +
+      "</article>"
+    );
+  }
+
   function filtrer() {
     var q = state.filtre.q.toLowerCase().trim();
     return state.objets.filter(function (o) {
       if (!estActif(o)) return false;
-      if (state.filtre.mode && o.mode !== state.filtre.mode) return false;
+      if (state.filtre.mode === "gratuit" && o.mode !== "don" && o.mode !== "troc") return false;
+      if (state.filtre.mode === "vente" && o.mode !== "vente") return false;
+      if (state.filtre.mode === "recherche") return false;   // demandes seulement
       if (state.filtre.cat && o.cat !== state.filtre.cat) return false;
       if (state.filtre.niveau && o.niveau !== state.filtre.niveau) return false;
       if (q) {
@@ -2357,7 +2419,10 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function vueCatalogue() {
-    var modes = [["", "Tout"], ["don", "Dons"], ["troc", "Trocs"], ["vente", "Ventes"]];
+    // Don et troc sont regroupés : dans les deux cas l'élève ne sort pas
+    // d'argent, et c'est la seule question qu'il se pose en parcourant.
+    var modes = [["", "Tout"], ["gratuit", "Gratuit"], ["vente", "Ventes"],
+                 ["recherche", "Recherchés"]];
     var seg = "";
     for (var m = 0; m < modes.length; m++) {
       seg += '<button data-mode="' + modes[m][0] + '" aria-pressed="' +
@@ -2377,9 +2442,12 @@ label .opt{font-weight:400;color:var(--faint)}
     }
 
     var res = filtrer();
-    var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
-    var corps = res.length
-      ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
+    var dem = filtrerDemandes();
+    var gratuits = res.filter(function (o) { return o.mode === "don" || o.mode === "troc"; }).length;
+    var cartes = res.map(function (o) { return carte(o); })
+                    .concat(dem.map(function (r) { return carteDemande(r); }));
+    var corps = cartes.length
+      ? '<div class="grid">' + cartes.join("") + "</div>"
       : messageVide();
 
     return (
@@ -2393,9 +2461,56 @@ label .opt{font-weight:400;color:var(--faint)}
       "</div>" +
       '<div class="count">' +
         '<span class="lbl"><b>' + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
-        (gratuits ? " · dont <b>" + gratuits + "</b> gratuite" + (gratuits > 1 ? "s" : "") : "") + "</span>" +
+        (gratuits ? " · dont <b>" + gratuits + "</b> sans argent" : "") +
+        (dem.length ? " · <b>" + dem.length + "</b> recherché" + (dem.length > 1 ? "s" : "") : "") +
+        "</span>" +
         '<span class="lbl">Remise au CDI</span>' +
       "</div>" + corps
+    );
+  }
+
+  // Chercher n'est pas déposer : ni photo, ni état, ni prix. Ne montrer
+  // que les champs utiles évite de faire croire qu'on possède l'objet.
+  function formulaireRecherche() {
+    var cats = '<option value="">Catégorie</option>';
+    for (var i = 0; i < CATEGORIES.length; i++) cats += '<option value="' + CATEGORIES[i].id + '">' + CATEGORIES[i].nom + "</option>";
+    var mats = '<option value="">Matière</option>';
+    for (var j = 0; j < MATIERES.length; j++) mats += '<option value="' + MATIERES[j] + '">' + MATIERES[j] + "</option>";
+    var nivs = '<option value="">Niveau</option>';
+    for (var k = 0; k < NIVEAUX.length; k++) nivs += '<option value="' + NIVEAUX[k] + '">' + NIVEAUX[k] + "</option>";
+
+    var choix = [
+      ["don", "Je donne"], ["troc", "J'échange"],
+      ["vente", "Je vends"], ["recherche", "Je cherche"]
+    ];
+    var pick = "";
+    for (var p = 0; p < choix.length; p++) {
+      pick += '<button type="button" data-depot="' + choix[p][0] + '" aria-pressed="' +
+        (state.depotMode === choix[p][0]) + '"><b>' + choix[p][1] + "</b></button>";
+    }
+
+    return (
+      '<div class="panel"><form id="f-recherche">' +
+        "<h2>Publier une demande</h2>" +
+        '<p class="sub">Votre demande apparaît dans le catalogue, parmi les annonces. ' +
+        "L'élève qui a cet objet au fond d'un placard n'aurait jamais pensé à le sortir — " +
+        "le voir réclamé le décide.</p>" +
+        '<div class="modepick" style="margin-bottom:16px">' + pick + "</div>" +
+        '<div class="form-grid">' +
+          '<div class="full"><label for="r-titre">Ce que vous cherchez</label>' +
+            '<input id="r-titre" required maxlength="90" placeholder="Manuel de SES Terminale"></div>' +
+          '<div><label for="r-cat">Catégorie</label><select id="r-cat">' + cats + "</select></div>" +
+          '<div><label for="r-mat">Matière</label><select id="r-mat">' + mats + "</select></div>" +
+          '<div><label for="r-niv">Niveau</label><select id="r-niv">' + nivs + "</select></div>" +
+          '<div class="full"><label for="r-note">Précisions <span class="opt">(facultatif)</span></label>' +
+            '<input id="r-note" maxlength="200" placeholder="Édition 2022 de préférence, peu importe l\'état."></div>' +
+        "</div>" +
+        '<div class="form-foot">' +
+          "<p>Renseignez la catégorie et la matière : c'est sur elles que repose l'alerte. " +
+          "Une demande trop vague ne trouvera rien.</p>" +
+          '<button class="btn primary" type="submit">Publier ma demande</button>' +
+        "</div>" +
+      "</form></div>"
     );
   }
 
@@ -2419,13 +2534,17 @@ label .opt{font-weight:400;color:var(--faint)}
     var choix = [
       ["don", "Je donne", "Gratuit, sans contrepartie. Votre compteur de dons augmente."],
       ["troc", "J'échange", "Vous gagnez 1 crédit tout de suite ; la personne qui le prend en dépense 1."],
-      ["vente", "Je vends", "Prix indicatif, plafonné à " + PLAFOND_PRIX + " €. Le règlement se fait en main propre."]
+      ["vente", "Je vends", "Prix indicatif, plafonné à " + PLAFOND_PRIX + " €. Le règlement se fait en main propre."],
+      ["recherche", "Je cherche", "Vous n'avez rien à déposer : vous publiez ce qu'il vous faut. " +
+        "Vous serez prévenue dès qu'un élève le dépose."]
     ];
     var pick = "";
     for (var p = 0; p < choix.length; p++) {
       pick += '<button type="button" data-depot="' + choix[p][0] + '" aria-pressed="' +
         (state.depotMode === choix[p][0]) + '"><b>' + choix[p][1] + "</b><span>" + choix[p][2] + "</span></button>";
     }
+
+    if (state.depotMode === "recherche") return formulaireRecherche();
 
     var champPrix = state.depotMode === "vente"
       ? '<div><label for="d-prix">Prix demandé <span class="opt">(de ' +
@@ -2999,7 +3118,7 @@ label .opt{font-weight:400;color:var(--faint)}
     renderNav();
     var v = document.getElementById("view");
     if (state.onglet === "catalogue")       v.innerHTML = vueCatalogue();
-    else if (state.onglet === "recherches") v.innerHTML = vueRecherches();
+    else if (state.onglet === "recherches") { state.onglet = "catalogue"; v.innerHTML = vueCatalogue(); }
     else if (state.onglet === "deposer")    v.innerHTML = vueDeposer();
     else if (state.onglet === "messages")   v.innerHTML = vueMessages();
     else if (state.onglet === "moderation") v.innerHTML = vueModeration();
@@ -3045,6 +3164,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var fr = document.getElementById("f-recherche");
     if (fr) fr.addEventListener("submit", function (ev) {
       ev.preventDefault();
+      if (!state.me) { toast("Créez votre compte pour publier une demande."); return; }
       var t = document.getElementById("r-titre").value.trim();
       if (!t) return;
       publierRecherche({
@@ -3055,6 +3175,7 @@ label .opt{font-weight:400;color:var(--faint)}
         note: document.getElementById("r-note").value.trim()
       });
       fr.reset();
+      state.onglet = "catalogue";
     });
 
     var fi = document.getElementById("d-isbn");

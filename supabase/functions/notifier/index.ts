@@ -145,6 +145,52 @@ function court(t: string, n: number) {
   return t.length <= n ? t : t.slice(0, n - 1) + "…";
 }
 
+// Une annonce vient d'être déposée : on cherche les demandes qu'elle
+// satisfait et on prévient ceux qui les ont publiées. La règle de
+// correspondance est dans la base, pas ici : elle doit pouvoir être
+// ajustée sans redéployer.
+async function annoncerCorrespondances(objetId: string) {
+  const reponse = (o: unknown) =>
+    new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const { data: article } = await db.from("objets")
+    .select("titre, mode, prix, proprietaire").eq("id", objetId).maybeSingle();
+  if (!article) return reponse({ ignore: "annonce inconnue" });
+
+  const { data: cibles } = await db.rpc("correspondances", { p_objet: objetId });
+  if (!cibles?.length) return reponse({ envoyes: 0, raison: "aucune demande correspondante" });
+
+  const valeur = article.mode === "don" ? "gratuit"
+               : article.mode === "vente" ? `${article.prix} €`
+               : "1 crédit";
+
+  let envoyes = 0;
+  const perimes: string[] = [];
+
+  for (const cible of cibles) {
+    const { data: abos } = await db.from("abonnements_push").select("*").eq("membre", cible.membre);
+    if (!abos?.length) continue;
+
+    const charge = JSON.stringify({
+      titre: "Ce que vous cherchez vient d'être déposé",
+      corps: `${court(article.titre, 70)} — ${valeur}`,
+      article: court(cible.demande ?? "", 60),
+      fil: null,
+    });
+
+    await Promise.all(abos.map(async (a) => {
+      try {
+        const r = await pousser(a, charge);
+        if (r.ok) envoyes++;
+        else if (r.status === 404 || r.status === 410) perimes.push(a.endpoint);
+      } catch (_) { /* sans conséquence : l'annonce est déjà enregistrée */ }
+    }));
+  }
+
+  if (perimes.length) await db.from("abonnements_push").delete().in("endpoint", perimes);
+  return reponse({ envoyes, demandes: cibles.length, nettoyes: perimes.length });
+}
+
 Deno.serve(async (req) => {
   const repondre = (o: unknown) =>
     new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -153,6 +199,10 @@ Deno.serve(async (req) => {
     const recu = await req.json().catch(() => ({}));
     const envoye = recu.record ?? recu;
     if (!envoye?.id) return repondre({ ignore: "message incomplet" });
+
+    // Deux déclencheurs mènent ici : un nouveau message, ou une annonce
+    // qui répond peut-être à une demande en attente.
+    if (recu.table === "objets") return await annoncerCorrespondances(envoye.id);
 
     // On relit le message dans la base au lieu de croire l'appelant.
     // La fonction est joignable avec la clé publique : sans cela, on
