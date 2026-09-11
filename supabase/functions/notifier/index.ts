@@ -166,10 +166,14 @@ async function annoncerCorrespondances(objetId: string) {
 
   let envoyes = 0;
   const perimes: string[] = [];
+  const detail: string[] = [];   // ce qui s'est réellement passé, par appareil
 
   for (const cible of cibles) {
     const { data: abos } = await db.from("abonnements_push").select("*").eq("membre", cible.membre);
-    if (!abos?.length) continue;
+    if (!abos?.length) {
+      detail.push(`${String(cible.membre).slice(0, 8)}: aucun appareil abonné`);
+      continue;
+    }
 
     const charge = JSON.stringify({
       titre: "Ce que vous cherchez vient d'être déposé",
@@ -181,14 +185,19 @@ async function annoncerCorrespondances(objetId: string) {
     await Promise.all(abos.map(async (a) => {
       try {
         const r = await pousser(a, charge);
-        if (r.ok) envoyes++;
-        else if (r.status === 404 || r.status === 410) perimes.push(a.endpoint);
-      } catch (_) { /* sans conséquence : l'annonce est déjà enregistrée */ }
+        if (r.ok) { envoyes++; detail.push("envoyé " + r.status); }
+        else {
+          detail.push("refusé " + r.status + " " + (await r.text()).slice(0, 90));
+          if (r.status === 404 || r.status === 410) perimes.push(a.endpoint);
+        }
+      } catch (e) {
+        detail.push("exception " + String(e).slice(0, 90));
+      }
     }));
   }
 
   if (perimes.length) await db.from("abonnements_push").delete().in("endpoint", perimes);
-  return reponse({ envoyes, demandes: cibles.length, nettoyes: perimes.length });
+  return reponse({ envoyes, demandes: cibles.length, nettoyes: perimes.length, detail });
 }
 
 Deno.serve(async (req) => {
@@ -236,23 +245,30 @@ Deno.serve(async (req) => {
     let envoyes = 0;
     const perimes: string[] = [];
 
+    const detail: string[] = [];
     await Promise.all(abos.map(async (a) => {
       try {
         const r = await pousser(a, charge);
-        if (r.ok) envoyes++;
+        if (r.ok) { envoyes++; detail.push("envoyé " + r.status); }
         // 404/410 : application désinstallée ou autorisation révoquée.
         // On nettoie plutôt que de réessayer indéfiniment.
-        else if (r.status === 404 || r.status === 410) perimes.push(a.endpoint);
-        else await db.from("abonnements_push")
-                     .update({ echecs: (a.echecs ?? 0) + 1 }).eq("endpoint", a.endpoint);
-      } catch (_) {
+        else if (r.status === 404 || r.status === 410) {
+          detail.push("périmé " + r.status);
+          perimes.push(a.endpoint);
+        } else {
+          detail.push("refusé " + r.status + " " + (await r.text()).slice(0, 90));
+          await db.from("abonnements_push")
+                  .update({ echecs: (a.echecs ?? 0) + 1 }).eq("endpoint", a.endpoint);
+        }
+      } catch (e) {
+        detail.push("exception " + String(e).slice(0, 90));
         await db.from("abonnements_push")
                 .update({ echecs: (a.echecs ?? 0) + 1 }).eq("endpoint", a.endpoint);
       }
     }));
 
     if (perimes.length) await db.from("abonnements_push").delete().in("endpoint", perimes);
-    return repondre({ envoyes, nettoyes: perimes.length });
+    return repondre({ envoyes, nettoyes: perimes.length, detail });
   } catch (e) {
     // On répond 200 : un échec de notification ne doit jamais faire
     // échouer l'enregistrement du message lui-même.
