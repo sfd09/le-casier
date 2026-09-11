@@ -15,9 +15,14 @@
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const PUBLIQUE = Deno.env.get("VAPID_PUBLIC_KEY")!;
-const PRIVEE   = Deno.env.get("VAPID_PRIVATE_KEY")!;
-const SUJET    = Deno.env.get("VAPID_SUBJECT") ?? "mailto:contact@le-casier";
+// Un secret collé emporte volontiers un espace ou un saut de ligne, que
+// l'interface n'affiche jamais. On nettoie plutôt que de faire échouer
+// le chiffrement par un caractère invisible.
+const lire = (n: string) => (Deno.env.get(n) ?? "").trim();
+
+const PUBLIQUE = lire("VAPID_PUBLIC_KEY");
+const PRIVEE   = lire("VAPID_PRIVATE_KEY");
+const SUJET    = lire("VAPID_SUBJECT") || "mailto:contact@le-casier";
 
 /* ---------------- outils base64url ---------------- */
 
