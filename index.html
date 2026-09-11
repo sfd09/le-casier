@@ -872,7 +872,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.11-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -964,6 +964,7 @@ label .opt{font-weight:400;color:var(--faint)}
     fiche: null,        // annonce ouverte en plein écran
     fils: [],           // fils de discussion me concernant
     filOuvert: null,
+    filEnAttente: null,   // annonce dont la discussion n'a pas encore commencé
     messages: [],
     recherches: [],
     filtre: { q: "", mode: "", cat: "", niveau: "" },
@@ -1330,19 +1331,50 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function ouvrirDiscussion(objetId) {
     if (!state.me) { toast("Créez votre compte pour écrire."); return; }
-    rpc("ouvrir_fil", { p_objet: objetId })
-      .then(function (id) {
-        fermerFiche();
-        state.onglet = "messages";
-        state.filOuvert = id;
-        return chargerFils().then(function () { return ouvrirFil(id); });
-      })
-      .then(function () { window.scrollTo(0, 0); })
-      .catch(echec);
+
+    // Une conversation existante s'ouvre ; sinon on prépare seulement
+    // l'écran. Créer le fil dès l'appui sur « Écrire » remplissait la
+    // liste de conversations sans un seul message.
+    var existant = null;
+    for (var i = 0; i < state.fils.length; i++) {
+      if (state.fils[i].objet === objetId) existant = state.fils[i].id;
+    }
+
+    fermerFiche();
+    state.onglet = "messages";
+    window.scrollTo(0, 0);
+
+    if (existant) {
+      state.filEnAttente = null;
+      state.filOuvert = existant;
+      ouvrirFil(existant);
+    } else {
+      state.filEnAttente = objetId;
+      state.filOuvert = null;
+      render();
+    }
   }
 
   function envoyer(texte) {
-    if (!state.filOuvert || !texte.trim()) return;
+    if (!texte.trim()) return;
+
+    // C'est le premier message qui fait exister la conversation.
+    if (!state.filOuvert && state.filEnAttente) {
+      var objet = state.filEnAttente;
+      rpc("ouvrir_fil", { p_objet: objet })
+        .then(function (id) {
+          state.filEnAttente = null;
+          state.filOuvert = id;
+          return rpc("envoyer_message", { p_fil: id, p_texte: texte });
+        })
+        .then(function () { return chargerMessages(state.filOuvert); })
+        .then(chargerFils)
+        .then(function () { render(); glisserEnBas(); })
+        .catch(echec);
+      return;
+    }
+
+    if (!state.filOuvert) return;
     rpc("envoyer_message", { p_fil: state.filOuvert, p_texte: texte })
       .then(function () { return chargerMessages(state.filOuvert); })
       .then(chargerFils)
@@ -2589,15 +2621,47 @@ label .opt{font-weight:400;color:var(--faint)}
       : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
   }
 
+  // Écran d'une conversation pas encore née : même apparence, mais rien
+  // n'est enregistré tant que le premier message n'est pas envoyé.
+  function vueNouvelleDiscussion() {
+    var o = trouver(state.filEnAttente);
+    if (!o) { state.filEnAttente = null; return vueMessages(); }
+    return (
+      '<div style="display:flex;align-items:center;gap:10px;padding:14px 0 10px">' +
+        '<button class="btn ghost" data-act="retour-messages" style="flex:none">Retour</button>' +
+        '<div style="min-width:0">' +
+          '<b style="display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            esc(o.titre) + "</b>" +
+          '<span style="font-size:12px;color:var(--faint)">avec ' + esc(o.proprietaire) +
+            (o.classe ? " · " + esc(o.classe) : "") + "</span>" +
+        "</div>" +
+        '<button class="btn ghost" data-ouvrir="' + o.id + '" style="flex:none;margin-left:auto">Voir</button>' +
+      "</div>" +
+      '<p class="rappel-rdv">Convenez d\'un créneau et retrouvez-vous <b>au CDI</b>. ' +
+      "Ne donnez ni adresse, ni numéro de téléphone : le rendez-vous se fixe ici.</p>" +
+      '<div class="discussion" id="discussion">' +
+        '<p class="empty" style="padding:26px 18px">Premier message : dites ce qui vous intéresse ' +
+        "et proposez un créneau.</p>" +
+      "</div>" +
+      '<form class="saisie" id="f-message">' +
+        '<textarea id="m-texte" rows="1" maxlength="800" placeholder="Votre message…" aria-label="Votre message"></textarea>' +
+        '<button class="btn primary" type="submit">Envoyer</button>' +
+      "</form>"
+    );
+  }
+
   function vueMessages() {
     if (!state.me) {
       return '<div class="panel"><h2>Vos discussions</h2>' +
         '<p class="sub">Créez votre compte pour écrire aux autres élèves et convenir d\'un rendez-vous.</p></div>';
     }
 
-    if (state.filOuvert) return vueDiscussion();
+    if (state.filOuvert || state.filEnAttente) return vueDiscussion();
+    // Un fil sans message n'a rien à montrer : reste des versions où il
+    // était créé dès l'appui sur « Écrire ».
+    var fils = state.fils.filter(function (f) { return !!f.dernierAuteur; });
 
-    if (!state.fils.length) {
+    if (!fils.length) {
       return '<h2 class="section-title">Messages</h2>' +
         '<div class="empty"><p>Aucune discussion pour l\'instant.</p>' +
         "<p style=\"font-size:13px\">Ouvrez une annonce et touchez « Écrire » pour convenir d'un rendez-vous.</p>" +
@@ -2607,10 +2671,10 @@ label .opt{font-weight:400;color:var(--faint)}
         '<button class="btn ghost" data-act="aller-catalogue">Parcourir le catalogue</button></div>';
     }
 
-    var html = '<h2 class="section-title">Messages <span>' + state.fils.length + "</span></h2>";
+    var html = '<h2 class="section-title">Messages <span>' + fils.length + "</span></h2>";
     html += '<div class="fils">';
-    for (var i = 0; i < state.fils.length; i++) {
-      var f = state.fils[i];
+    for (var i = 0; i < fils.length; i++) {
+      var f = fils[i];
       var o = trouver(f.objet) || {};
       var autre = (f.proprietaire === state.me.cle) ? f.demandeur : f.proprietaire;
       var m = state.membres[autre] || {};
@@ -2635,6 +2699,7 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function vueDiscussion() {
+    if (!state.filOuvert && state.filEnAttente) return vueNouvelleDiscussion();
     var f = null;
     for (var i = 0; i < state.fils.length; i++) if (state.fils[i].id === state.filOuvert) f = state.fils[i];
     if (!f) { state.filOuvert = null; return vueMessages(); }
@@ -4120,6 +4185,7 @@ label .opt{font-weight:400;color:var(--faint)}
     if (!b) return;
     state.onglet = b.getAttribute("data-onglet");
     state.filOuvert = null;
+    state.filEnAttente = null;
     render();
     if (state.onglet === "moi") rafraichirPush().then(render);
     // Les fils sont relus à l'ouverture de l'onglet : un chargement raté
@@ -4192,7 +4258,7 @@ label .opt{font-weight:400;color:var(--faint)}
     else if (act === "aller-depot") { state.onglet = "deposer"; render(); }
     else if (act === "deconnexion") deconnecter();
     else if (act === "ecrire") ouvrirDiscussion(id);
-    else if (act === "retour-messages") { state.filOuvert = null; render(); }
+    else if (act === "retour-messages") { state.filOuvert = null; state.filEnAttente = null; render(); }
     else if (act === "reinitialiser") reinitialiser();
     else if (act === "push-on") activerPush();
     else if (act === "push-off") desactiverPush();
