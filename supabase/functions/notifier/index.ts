@@ -200,12 +200,43 @@ async function annoncerCorrespondances(objetId: string) {
   return reponse({ envoyes, demandes: cibles.length, nettoyes: perimes.length, detail });
 }
 
+// Route de diagnostic : indique lequel des éléments base64 est illisible,
+// sans jamais révéler les valeurs elles-mêmes.
+function inspecter(nom: string, v: string | undefined) {
+  if (v === undefined || v === null) return `${nom}: ABSENT`;
+  const brut = String(v);
+  const propre = brut.trim();
+  const suspect = brut !== propre ? " (espaces ou saut de ligne !)" : "";
+  try {
+    const o = versOctets(propre);
+    return `${nom}: ${propre.length} car → ${o.length} octets${suspect}`;
+  } catch (e) {
+    return `${nom}: ${propre.length} car → ILLISIBLE${suspect}`;
+  }
+}
+
 Deno.serve(async (req) => {
   const repondre = (o: unknown) =>
     new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } });
 
   try {
     const recu = await req.json().catch(() => ({}));
+
+    if (recu.diagnostic) {
+      const lignes = [
+        inspecter("VAPID_PUBLIC_KEY", PUBLIQUE),
+        inspecter("VAPID_PRIVATE_KEY", PRIVEE),
+        `VAPID_SUBJECT: ${SUJET}`,
+      ];
+      const { data: abos } = await db.from("abonnements_push").select("p256dh, auth, endpoint");
+      for (const a of (abos ?? [])) {
+        lignes.push(inspecter("p256dh", a.p256dh) + " | " + inspecter("auth", a.auth) +
+                    " | " + new URL(a.endpoint).host);
+      }
+      if (!abos?.length) lignes.push("aucun abonnement enregistré");
+      return repondre({ diagnostic: lignes });
+    }
+
     const envoye = recu.record ?? recu;
     if (!envoye?.id) return repondre({ ignore: "message incomplet" });
 
