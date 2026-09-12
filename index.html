@@ -889,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.12-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1173,7 +1173,8 @@ label .opt{font-weight:400;color:var(--faint)}
     return ouvrirCoffre().then(function (db) {
       return new Promise(function (res, rej) {
         var t = db.transaction("images", "readwrite");
-        t.objectStore("images").put({ pleine: images.pleine, mini: images.mini }, "courante");
+        t.objectStore("images").put(
+          { pleine: images.pleine, mini: images.mini, le: Date.now() }, "courante");
         t.oncomplete = function () { db.close(); res(); };
         t.onerror = function () { db.close(); rej(t.error); };
       });
@@ -1828,9 +1829,11 @@ label .opt{font-weight:400;color:var(--faint)}
       }
       return charger();
     }).then(function () {
-      if (o.mode === "troc")     toast("Annonce publiée. +1 crédit.");
-      else if (o.mode === "don") toast("Don publié. Merci — ça fait vivre le service.");
-      else toast("Annonce publiée à " + prixFmt(o.prix) + ". Le règlement se fait en main propre.");
+      var muette = o.photo ? "" : " Sans photo.";
+      if (o.mode === "troc")     toast("Annonce publiée. +1 crédit." + muette);
+      else if (o.mode === "don") toast("Don publié. Merci — ça fait vivre le service." + muette);
+      else toast("Annonce publiée à " + prixFmt(o.prix) +
+                 ". Le règlement se fait en main propre." + muette);
     }).catch(echec);
   }
 
@@ -2706,7 +2709,7 @@ label .opt{font-weight:400;color:var(--faint)}
           "<p>Photographiez <strong>l'objet seul</strong>. Aucune photo de personne, " +
           "ni de document portant un nom : les annonces sont visibles par tout le lycée.</p>" +
           '<button id="d-publier" class="btn ' + (state.depotMode === "don" ? "give" : "primary") + '" type="submit">' +
-            (state.depotMode === "don" ? "Publier le don" : state.depotMode === "troc" ? "Publier · +1 crédit" : "Publier l'annonce") +
+            libellePublier() +
           "</button>" +
           (state.depotMode === "vente"
             ? '<p class="aide-publier">Une vente doit porter un prix : indiquez-le, entre ' +
@@ -3230,7 +3233,10 @@ label .opt{font-weight:400;color:var(--faint)}
       // ce qui avait été préparé avant de disparaître.
       if (!state.photo) {
         reprendrePhoto().then(function (images) {
-          if (images && images.mini && !state.photo) {
+          // Passé une demi-heure, ce n'est plus la photo de ce dépôt-ci :
+          // la remettre en place collerait l'image d'un objet sur un autre.
+          var frais = images && (Date.now() - (images.le || 0)) < 30 * 60 * 1000;
+          if (frais && images.mini && !state.photo) {
             state.photo = images;
             render();
             toast("Votre photo a été retrouvée.");
@@ -3443,9 +3449,21 @@ label .opt{font-weight:400;color:var(--faint)}
     return champ.checkValidity();
   }
 
+  // « Don publié. Merci » s'affichait à l'identique avec et sans photo :
+  // une annonce muette avait exactement l'air d'une annonce réussie.
+  // Le bouton porte désormais ce qu'il va réellement publier.
+  function libellePublier() {
+    var base = state.depotMode === "don"  ? "Publier le don"
+             : state.depotMode === "troc" ? "Publier · +1 crédit"
+             : "Publier l'annonce";
+    return base + (state.photo ? "" : " · sans photo");
+  }
+
   function majPublier() {
     var b = document.getElementById("d-publier");
-    if (b) b.disabled = !prixSaisiValide();
+    if (!b) return;
+    b.disabled = !prixSaisiValide();
+    b.textContent = libellePublier();
   }
 
   function onDepot(ev) {
@@ -3485,6 +3503,13 @@ label .opt{font-weight:400;color:var(--faint)}
         toast("La photo a été perdue. Reprenez-la avant de publier.");
         return;
       }
+      // Sur iPhone, la prise de vue peut faire décharger la page : on
+      // revient au formulaire sans photo et sans que rien ne le dise.
+      // Mieux vaut une question de trop qu'une annonce muette de plus.
+      if (!window.confirm(
+            "Publier sans photo ?\n\n" +
+            "Si vous venez d'en prendre une, elle n'est pas arrivée : " +
+            "refaites-la avant de publier.")) return;
       deposer(champs);
       return;
     }
