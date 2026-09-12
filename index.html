@@ -396,6 +396,10 @@ label .opt{font-weight:400;color:var(--faint)}
   border:1px solid var(--line);
 }
 .photo-apercu img{display:block;width:100%;height:auto}
+.journal{margin-top:10px;font-size:12px;color:var(--faint)}
+.journal summary{cursor:pointer;padding:4px 0}
+.journal pre{white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.5;
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0;max-height:260px;overflow:auto}
 .obj-head{display:flex;gap:8px;align-items:flex-start}
 .obj h3{
   margin:0;font-family:"Public Sans",sans-serif;
@@ -889,7 +893,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.12-3";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1105,6 +1109,40 @@ label .opt{font-weight:400;color:var(--faint)}
     return viaImage(fichier);
   }
 
+  // Un iPhone n'a pas de console. Tant que la prise de vue échoue sans
+  // rien dire, on ne peut que supposer — et on a déjà supposé deux fois.
+  // L'application tient donc elle-même le compte de ce qu'elle fait, dans
+  // un endroit qui survit à un rechargement de page : si iOS décharge
+  // l'onglet pendant la photo, le journal le montre en toutes lettres.
+  var JOURNAL = "casier-journal-photo";
+
+  function noter(etape, detail) {
+    try {
+      var j = JSON.parse(localStorage.getItem(JOURNAL) || "[]");
+      j.push({ t: Date.now(), e: etape, d: detail == null ? "" : String(detail) });
+      localStorage.setItem(JOURNAL, JSON.stringify(j.slice(-40)));
+    } catch (e) {}
+  }
+
+  function journalTexte() {
+    var j;
+    try { j = JSON.parse(localStorage.getItem(JOURNAL) || "[]"); } catch (e) { j = []; }
+    if (!j.length) return "Rien pour l'instant.";
+    return j.map(function (x) {
+      var d = new Date(x.t);
+      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) +
+             ":" + ("0" + d.getSeconds()).slice(-2) + "  " + x.e + (x.d ? " — " + x.d : "");
+    }).join("\n");
+  }
+
+  // Une promesse qui ne se dénoue jamais est indiscernable d'une promesse
+  // lente : sans délai, un blocage reste un silence.
+  function avecDelai(p, ms, quoi) {
+    return Promise.race([p, new Promise(function (_, rej) {
+      setTimeout(function () { rej(new Error("délai dépassé (" + quoi + ")")); }, ms);
+    })]);
+  }
+
   function viaImage(fichier) {
     return new Promise(function (res, rej) {
       var url = URL.createObjectURL(fichier);
@@ -1200,14 +1238,21 @@ label .opt{font-weight:400;color:var(--faint)}
     }).catch(function () {});
   }
 
+  // Les deux réductions se faisaient de front : sur un vieil iPhone, la
+  // photo pleine résolution et deux canevas vivaient en même temps, et
+  // Safari pouvait rendre la main en déchargeant la page. L'une après
+  // l'autre coûte quelques dixièmes de seconde et tient dans la mémoire.
   function preparerImages(fichier) {
     return versBitmap(fichier).then(function (src) {
-      return Promise.all([
-        reduire(src, PLEINE_PX, PLEINE_Q),
-        recadrer(src, VIGNETTE_L, VIGNETTE_H, VIGNETTE_Q)
-      ]).then(function (r) {
-        if (src.close) src.close();
-        return { pleine: r[0], mini: r[1] };
+      var d = dimensions(src);
+      noter("décodée", d.l + "×" + d.h);
+      return reduire(src, PLEINE_PX, PLEINE_Q).then(function (pleine) {
+        noter("photo réduite", Math.round(pleine.size / 1024) + " ko");
+        return recadrer(src, VIGNETTE_L, VIGNETTE_H, VIGNETTE_Q).then(function (mini) {
+          if (src.close) src.close();
+          noter("vignette", Math.round(mini.size / 1024) + " ko");
+          return { pleine: pleine, mini: mini };
+        });
       });
     });
   }
@@ -1829,6 +1874,7 @@ label .opt{font-weight:400;color:var(--faint)}
       }
       return charger();
     }).then(function () {
+      noter("annonce publiée", o.photo ? "avec photo" : "SANS photo");
       var muette = o.photo ? "" : " Sans photo.";
       if (o.mode === "troc")     toast("Annonce publiée. +1 crédit." + muette);
       else if (o.mode === "don") toast("Don publié. Merci — ça fait vivre le service." + muette);
@@ -2703,6 +2749,10 @@ label .opt{font-weight:400;color:var(--faint)}
               "</span>" +
             "</div>" +
             '<div class="photo-apercu" id="photo-apercu"' + (state.photo ? "" : ' hidden') + "></div>" +
+            '<details class="journal"><summary>Diagnostic photo</summary>' +
+              "<pre>" + esc(journalTexte()) + "</pre>" +
+              '<button type="button" class="btn ghost" data-photo="oublier">Effacer le journal</button>' +
+            "</details>" +
           "</div>" +
         "</div>" +
         '<div class="form-foot">' +
@@ -3341,23 +3391,31 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function onPhotoChoisie(ev) {
     var f = ev.target.files && ev.target.files[0];
-    if (!f) return;
-    if (!/^image\//.test(f.type)) { toast("Ce fichier n'est pas une image."); return; }
+    if (!f) { noter("retour sans fichier"); return; }
+    noter("fichier reçu", (f.type || "type inconnu") + ", " + Math.round(f.size / 1024) + " ko");
+    if (!/^image\//.test(f.type)) {
+      noter("refusé", "ce n'est pas une image");
+      toast("Ce fichier n'est pas une image."); return;
+    }
 
     var etat = document.getElementById("photo-etat");
     if (etat) etat.textContent = "Compression…";
 
     retenirBrouillon();
-    preparerImages(f).then(function (images) {
+    avecDelai(preparerImages(f), 25000, "compression").then(function (images) {
       state.photo = images;
       rangerPhoto(images);
+      noter("photo prête");
       render();
       toast("Photo prête : " + Math.round(f.size / 1024) + " ko réduits à " +
             Math.round(images.mini.size / 1024) + " ko pour le catalogue.");
-    }).catch(function () {
+    }).catch(function (e) {
       state.photo = null;
+      noter("échec", (e && e.message) || "raison inconnue");
       render();
-      toast("Cette image n'a pas pu être lue. Réessayez.");
+      // Dire laquelle des étapes a lâché vaut mieux qu'un « réessayez »
+      // qui laisse recommencer la même manœuvre à l'identique.
+      toast("Photo non traitée : " + ((e && e.message) || "raison inconnue") + ".");
     });
   }
 
@@ -3515,11 +3573,14 @@ label .opt{font-weight:400;color:var(--faint)}
     }
 
     toast("Envoi de la photo…");
+    noter("envoi vers le serveur");
     televerser(state.photo).then(function (chemins) {
+      noter("photo envoyée", chemins.photo);
       champs.photo = chemins.photo;
       champs.photoMin = chemins.photo_min;
       deposer(champs);
-    }).catch(function () {
+    }).catch(function (e) {
+      noter("envoi échoué", (e && e.message) || "raison inconnue");
       toast("La photo n'a pas pu être envoyée. Réessayez, ou publiez sans photo.");
     });
   }
@@ -4539,8 +4600,17 @@ label .opt{font-weight:400;color:var(--faint)}
     var ph = ev.target.closest("[data-photo]");
     if (ph) {
       retenirBrouillon();
-      if (ph.getAttribute("data-photo") === "retirer") { state.photo = null; viderCoffre(); render(); }
-      else { var i = document.getElementById("d-photo"); if (i) i.click(); }
+      if (ph.getAttribute("data-photo") === "oublier") {
+        try { localStorage.removeItem(JOURNAL); } catch (e) {}
+        render(); return;
+      }
+      if (ph.getAttribute("data-photo") === "retirer") {
+        state.photo = null; viderCoffre(); noter("photo retirée"); render();
+      } else {
+        var i = document.getElementById("d-photo");
+        noter("ouverture appareil photo");
+        if (i) i.click();
+      }
       return;
     }
 
@@ -4625,6 +4695,10 @@ label .opt{font-weight:400;color:var(--faint)}
   }
 
   function demarrer() {
+    // Cette ligne est la plus importante du journal : si elle apparaît
+    // entre « ouverture appareil photo » et « fichier reçu », c'est iOS
+    // qui a déchargé la page pendant la prise de vue.
+    noter("démarrage de l'application", VERSION_APP);
     if (typeof supabase === "undefined" || !supabase.createClient) {
       replier("bibliothèque cliente non chargée");
       return;
