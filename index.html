@@ -889,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.12-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-2";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -2454,6 +2454,38 @@ label .opt{font-weight:400;color:var(--faint)}
     );
   }
 
+  // Deux nombres portant le même mot se contredisent à l'écran : celui
+  // du haut ne comptait que les annonces retenues par les filtres, celui
+  // du bas comptait toutes les lignes du catalogue, y compris les
+  // échanges terminés et les annonces masquées par un signalement.
+  // Les deux comptent désormais la même chose — les annonces encore
+  // disponibles — et celui du haut dit quand il ne montre qu'une part.
+  function filtreActif() {
+    return !!(state.filtre.q.trim() || state.filtre.mode ||
+              state.filtre.cat || state.filtre.niveau);
+  }
+
+  function etiquetteResultats(res, dem) {
+    var gratuits = res.filter(function (o) {
+      return o.mode === "don" || o.mode === "troc";
+    }).length;
+    return "<b>" + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
+      (filtreActif() ? (res.length > 1 ? " affichées" : " affichée") : "") +
+      (gratuits ? " · dont <b>" + gratuits + "</b> sans argent" : "") +
+      (dem.length ? " · <b>" + dem.length + "</b> recherché" + (dem.length > 1 ? "s" : "") : "");
+  }
+
+  // Les demandes sont des cartes du catalogue au même titre que les
+  // annonces : les oublier ici les faisait disparaître dès la première
+  // frappe dans le champ de recherche.
+  function grilleCatalogue(res, dem) {
+    var cartes = res.map(function (o) { return carte(o); })
+                    .concat(dem.map(function (r) { return carteDemande(r); }));
+    return cartes.length
+      ? '<div class="grid">' + cartes.join("") + "</div>"
+      : messageVide();
+  }
+
   function filtrer() {
     var q = state.filtre.q.toLowerCase().trim();
     return state.objets.filter(function (o) {
@@ -2513,12 +2545,7 @@ label .opt{font-weight:400;color:var(--faint)}
 
     var res = filtrer();
     var dem = filtrerDemandes();
-    var gratuits = res.filter(function (o) { return o.mode === "don" || o.mode === "troc"; }).length;
-    var cartes = res.map(function (o) { return carte(o); })
-                    .concat(dem.map(function (r) { return carteDemande(r); }));
-    var corps = cartes.length
-      ? '<div class="grid">' + cartes.join("") + "</div>"
-      : messageVide();
+    var corps = grilleCatalogue(res, dem);
 
     return (
       '<div class="filters">' +
@@ -2530,10 +2557,7 @@ label .opt{font-weight:400;color:var(--faint)}
         '<div class="chiprail">' + chips + "</div>" +
       "</div>" +
       '<div class="count">' +
-        '<span class="lbl"><b>' + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
-        (gratuits ? " · dont <b>" + gratuits + "</b> sans argent" : "") +
-        (dem.length ? " · <b>" + dem.length + "</b> recherché" + (dem.length > 1 ? "s" : "") : "") +
-        "</span>" +
+        '<span class="lbl">' + etiquetteResultats(res, dem) + "</span>" +
         '<span class="lbl">Remise au CDI</span>' +
       "</div>" + corps
     );
@@ -3276,18 +3300,12 @@ label .opt{font-weight:400;color:var(--faint)}
   function rerenderCatalogue() {
     if (state.onglet !== "catalogue") return;
     var res = filtrer();
-    var gratuits = res.filter(function (o) { return o.mode === "don"; }).length;
+    var dem = filtrerDemandes();
     var v = document.getElementById("view");
     var cible = v.querySelector(".grid") || v.querySelector(".empty");
     var lbl = v.querySelector(".count .lbl");
-    if (lbl) {
-      lbl.innerHTML = "<b>" + res.length + "</b> annonce" + (res.length > 1 ? "s" : "") +
-        (gratuits ? " · dont <b>" + gratuits + "</b> gratuite" + (gratuits > 1 ? "s" : "") : "");
-    }
-    var neuf = res.length
-      ? '<div class="grid">' + res.map(function (o) { return carte(o); }).join("") + "</div>"
-      : messageVide();
-    if (cible) cible.outerHTML = neuf;
+    if (lbl) lbl.innerHTML = etiquetteResultats(res, dem);
+    if (cible) cible.outerHTML = grilleCatalogue(res, dem);
   }
 
   function renderStatus() {
@@ -3296,8 +3314,10 @@ label .opt{font-weight:400;color:var(--faint)}
       el.innerHTML = "<b>Hors ligne</b> · " + esc(state.horsLigne) +
         " — les annonces affichées sont des exemples.";
     } else if (state.pret) {
-      el.innerHTML = "<b>" + state.objets.length + "</b> annonces · <b>" +
-        state.recherches.length + "</b> demandes · mis à jour en direct pour tout le lycée." +
+      var dispo = state.objets.filter(estActif).length;
+      el.innerHTML = "<b>" + dispo + "</b> annonce" + (dispo > 1 ? "s" : "") +
+        " en ligne dans tout le lycée · <b>" + state.recherches.length + "</b> demande" +
+        (state.recherches.length > 1 ? "s" : "") + " · mis à jour en direct." +
         '<br><span style="opacity:.6">version ' + VERSION_APP + "</span>";
     } else {
       el.textContent = "Connexion au catalogue…";
