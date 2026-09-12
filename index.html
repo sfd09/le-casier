@@ -889,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.11-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-1";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1149,6 +1149,54 @@ label .opt{font-weight:400;color:var(--faint)}
     c.width = L; c.height = H;
     c.getContext("2d").drawImage(src, sx, sy, sl, sh, 0, 0, L, H);
     return versBlob(c, q);
+  }
+
+  // Sur iPhone, ouvrir l'appareil photo peut faire décharger la page de la
+  // mémoire : au retour, tout ce qui n'était qu'en mémoire vive a disparu,
+  // y compris la photo qu'on venait de préparer. L'élève publiait alors
+  // une annonce sans image, sans rien remarquer.
+  // On garde donc les images hors mémoire, le temps du dépôt.
+
+  var COFFRE = "casier-photo";
+
+  function ouvrirCoffre() {
+    return new Promise(function (res, rej) {
+      if (!window.indexedDB) { rej(new Error("indexedDB absent")); return; }
+      var d = indexedDB.open(COFFRE, 1);
+      d.onupgradeneeded = function () { d.result.createObjectStore("images"); };
+      d.onsuccess = function () { res(d.result); };
+      d.onerror = function () { rej(d.error); };
+    });
+  }
+
+  function rangerPhoto(images) {
+    return ouvrirCoffre().then(function (db) {
+      return new Promise(function (res, rej) {
+        var t = db.transaction("images", "readwrite");
+        t.objectStore("images").put({ pleine: images.pleine, mini: images.mini }, "courante");
+        t.oncomplete = function () { db.close(); res(); };
+        t.onerror = function () { db.close(); rej(t.error); };
+      });
+    }).catch(function () {});   // le dépôt reste possible sans cette sécurité
+  }
+
+  function reprendrePhoto() {
+    return ouvrirCoffre().then(function (db) {
+      return new Promise(function (res) {
+        var t = db.transaction("images", "readonly");
+        var q = t.objectStore("images").get("courante");
+        q.onsuccess = function () { db.close(); res(q.result || null); };
+        q.onerror = function () { db.close(); res(null); };
+      });
+    }).catch(function () { return null; });
+  }
+
+  function viderCoffre() {
+    return ouvrirCoffre().then(function (db) {
+      var t = db.transaction("images", "readwrite");
+      t.objectStore("images").delete("courante");
+      t.oncomplete = function () { db.close(); };
+    }).catch(function () {});
   }
 
   function preparerImages(fichier) {
@@ -1762,7 +1810,9 @@ label .opt{font-weight:400;color:var(--faint)}
       p_photo: o.photo || null, p_photo_min: o.photoMin || null
     }).then(function () {
       state.photo = null;
+      viderCoffre();
       state.brouillon = {};
+      try { sessionStorage.removeItem("casier-brouillon"); } catch (e) {}
       state.onglet = "catalogue";
       // La saisie de cet élève devient la fiche du lycée pour cet ISBN :
       // les suivants n'auront plus à la refaire.
@@ -3152,6 +3202,17 @@ label .opt{font-weight:400;color:var(--faint)}
     var fd = document.getElementById("f-depot");
     if (fd) {
       restituerBrouillon();
+      // La page a pu être déchargée pendant la prise de vue : on récupère
+      // ce qui avait été préparé avant de disparaître.
+      if (!state.photo) {
+        reprendrePhoto().then(function (images) {
+          if (images && images.mini && !state.photo) {
+            state.photo = images;
+            render();
+            toast("Votre photo a été retrouvée.");
+          }
+        });
+      }
       majPublier();
       majSuggestions();
       fd.addEventListener("submit", onDepot);
@@ -3263,6 +3324,7 @@ label .opt{font-weight:400;color:var(--faint)}
     retenirBrouillon();
     preparerImages(f).then(function (images) {
       state.photo = images;
+      rangerPhoto(images);
       render();
       toast("Photo prête : " + Math.round(f.size / 1024) + " ko réduits à " +
             Math.round(images.mini.size / 1024) + " ko pour le catalogue.");
@@ -3285,9 +3347,18 @@ label .opt{font-weight:400;color:var(--faint)}
       var e = document.getElementById(id);
       if (e) state.brouillon[id] = e.value;
     });
+    // Même raison que la photo : un déchargement de page ne doit pas
+    // effacer ce que l'élève vient de saisir.
+    try { sessionStorage.setItem("casier-brouillon", JSON.stringify(state.brouillon)); } catch (e) {}
   }
 
   function restituerBrouillon() {
+    if (!Object.keys(state.brouillon).length) {
+      try {
+        var garde = JSON.parse(sessionStorage.getItem("casier-brouillon") || "null");
+        if (garde) state.brouillon = garde;
+      } catch (e) {}
+    }
     CHAMPS_DEPOT.forEach(function (id) {
       var e = document.getElementById(id);
       if (e && state.brouillon[id] !== undefined && state.brouillon[id] !== "") {
@@ -3387,7 +3458,16 @@ label .opt{font-weight:400;color:var(--faint)}
 
     // La photo part en premier : si l'envoi échoue, aucune annonce
     // orpheline n'est créée.
-    if (!state.photo) { deposer(champs); return; }
+    if (!state.photo) {
+      // Le bouton affiche « Changer la photo » alors que rien n'est
+      // prêt : mieux vaut prévenir que publier une annonce muette.
+      if (document.querySelector('[data-photo="retirer"]')) {
+        toast("La photo a été perdue. Reprenez-la avant de publier.");
+        return;
+      }
+      deposer(champs);
+      return;
+    }
 
     toast("Envoi de la photo…");
     televerser(state.photo).then(function (chemins) {
@@ -3915,29 +3995,69 @@ label .opt{font-weight:400;color:var(--faint)}
 
   /* ---------------- recherche du livre ---------------- */
 
+  // La déduction procédait par ordre : la première règle qui accrochait
+  // l'emportait. « Modèles mathématiques » dans les sujets d'un livre de
+  // chimie le classait en mathématiques, et « Roman anglais » rangeait un
+  // roman traduit parmi les langues. On pèse désormais, au lieu de courir.
+  //
+  // Une matière fausse est pire qu'une matière absente : elle fait
+  // manquer les correspondances, et « le premier fait foi » la fige pour
+  // tout le lycée. En cas de doute, on ne renseigne rien.
+
   var MOTS_MATIERE = [
-    // « analyse » seul est trop courant — « analyse critique » d'une œuvre
-    // n'a rien de mathématique.
-    [/math[eé]matiq|alg[eè]bre|g[eé]om[eé]trie|arithm[eé]tiq|\banalyse math/i, "Mathématiques"],
-    [/physique|chimie/i, "Physique-Chimie"],
-    [/\bsvt\b|biolog|g[eé]olog|sciences de la vie/i, "SVT"],
-    [/histoire|g[eé]ograph/i, "Histoire-Géo"],
-    [/\bses\b|[eé]conomi|sociolog/i, "SES"],
-    [/philosoph/i, "Philosophie"],
-    [/anglais|espagnol|allemand|italien|langue/i, "Langues"],
-    [/\bnsi\b|informatique|num[eé]rique|python/i, "NSI"],
-    [/fran[cç]ais|litt[eé]rature|po[eè]sie|th[eé][aâ]tre/i, "Français"]
+    ["Mathématiques",  /math[eé]matiq|alg[eè]bre|g[eé]om[eé]trie|arithm[eé]tiq|probabilit|trigonom/i],
+    ["Physique-Chimie",/physique|chimie|chimiqu|m[eé]caniq|thermodynam|[eé]lectroniqu|mol[eé]cul|atom/i],
+    ["SVT",            /\bsvt\b|biolog|g[eé]olog|sciences de la vie|g[eé]n[eé]tiq|[eé]cosyst/i],
+    ["Histoire-Géo",   /histoire|g[eé]ograph|g[eé]opolit/i],
+    ["SES",            /\bses\b|[eé]conomi|sociolog|sciences sociales/i],
+    ["Philosophie",    /philosoph/i],
+    ["NSI",            /\bnsi\b|informatiq|algorithm|python|programmation/i],
+    ["Langues",        /m[eé]thode de langue|grammaire (anglaise|espagnole|allemande)|vocabulaire (anglais|espagnol)|bilingue|dictionnaire/i],
+    // « français » seul apparaît dans « traductions françaises » ou
+    // « dictionnaires français » : trop courant pour désigner la matière.
+    ["Français",       /roman|po[eé]sie|po[eè]me|th[eé][aâ]tre|litt[eé]rature fran|nouvelles|r[eé]cit/i]
   ];
+
   var MOTS_NIVEAU = [
-    [/terminale|\bterm\b/i, "Terminale"],
-    [/premi[eè]re|\b1re\b/i, "Première"],
-    [/seconde|\b2de\b/i, "Seconde"],
-    [/pr[eé]pa|sup\b|maths sup/i, "Prépa"]
+    ["Terminale", /terminale|\bterm\b/i],
+    ["Première",  /premi[eè]re|\b1re\b/i],
+    ["Seconde",   /seconde|\b2de\b/i],
+    ["Prépa",     /pr[eé]pa|classes pr[eé]paratoires|\bsup\b|\bspé\b/i]
   ];
-  function deviner(regles, texte) {
-    for (var i = 0; i < regles.length; i++) if (regles[i][0].test(texte)) return regles[i][1];
+
+  // Les sujets du catalogue valent mieux que le titre, et le premier
+  // sujet mieux que les suivants : le SUDOC place le principal en tête.
+  function peser(regles, sujets, titre) {
+    var scores = {};
+    function compter(texte, poids) {
+      if (!texte) return;
+      for (var i = 0; i < regles.length; i++) {
+        if (regles[i][1].test(texte)) {
+          scores[regles[i][0]] = (scores[regles[i][0]] || 0) + poids;
+        }
+      }
+    }
+    (sujets || []).forEach(function (s, i) { compter(s, i === 0 ? 4 : 2); });
+    compter(titre, 1);
+
+    var meilleur = "", score = 0, exaequo = false;
+    for (var k in scores) {
+      if (scores[k] > score) { meilleur = k; score = scores[k]; exaequo = false; }
+      else if (scores[k] === score) { exaequo = true; }
+    }
+    // Un titre seul (poids 1) ne suffit pas, et une égalité non plus.
+    return (score >= 2 && !exaequo) ? meilleur : "";
+  }
+
+  // Un manuel se reconnaît à ses sujets bien mieux qu'à son éditeur :
+  // le SUDOC indexe « Manuels d'enseignement secondaire ».
+  function devinerCategorie(sujets, texte) {
+    var tout = (sujets || []).join(" ") + " " + (texte || "");
+    if (/manuel|enseignement secondaire|annales|programmes scolaires|exercices corrig/i.test(tout)) return "manuel";
+    if (/roman|po[eé]sie|th[eé][aâ]tre|litt[eé]rature|nouvelles|bande dessin/i.test(tout)) return "lecture";
     return "";
   }
+
 
   // 1. La mémoire du lycée. Interrogée en premier : c'est la seule source
   //    qui connaisse le parascolaire français, et la seule qui réponde
@@ -4209,17 +4329,13 @@ label .opt{font-weight:400;color:var(--faint)}
         if (champ("d-auteur") && !champ("d-auteur").value) champ("d-auteur").value = r.auteur;
 
         state.ficheTrouvee = r;
-        // Les sujets du catalogue valent mieux qu'une devinette sur le titre.
-        var texte = r.titre + " " + r.auteur + " " + (r.sujets || []).join(" ");
-        var mat = r.matiere || deviner(MOTS_MATIERE, texte);
-        var niv = r.niveau  || deviner(MOTS_NIVEAU, texte);
+        var texte = r.titre + " " + r.auteur;
+        var mat = r.matiere || peser(MOTS_MATIERE, r.sujets, texte);
+        var niv = r.niveau  || peser(MOTS_NIVEAU, r.sujets, texte);
         if (mat && champ("d-mat")) champ("d-mat").value = mat;
         if (niv && champ("d-niv")) champ("d-niv").value = niv;
-        if (champ("d-cat")) {
-          champ("d-cat").value = r.categorie ||
-            (/manuel|programme|bordas|nathan|hachette|magnard|hatier|belin|delagrave|ellipses|dunod|vuibert/i.test(texte)
-              ? "manuel" : "lecture");
-        }
+        var cat = r.categorie || devinerCategorie(r.sujets, texte);
+        if (cat && champ("d-cat")) champ("d-cat").value = cat;
         retenirBrouillon();
         toast(r.titre.slice(0, 38) + " — " + r.source);
       });
@@ -4378,7 +4494,7 @@ label .opt{font-weight:400;color:var(--faint)}
     var ph = ev.target.closest("[data-photo]");
     if (ph) {
       retenirBrouillon();
-      if (ph.getAttribute("data-photo") === "retirer") { state.photo = null; render(); }
+      if (ph.getAttribute("data-photo") === "retirer") { state.photo = null; viderCoffre(); render(); }
       else { var i = document.getElementById("d-photo"); if (i) i.click(); }
       return;
     }
