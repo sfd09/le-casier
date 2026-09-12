@@ -893,7 +893,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.12-4";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1114,25 +1114,35 @@ label .opt{font-weight:400;color:var(--faint)}
   // L'application tient donc elle-même le compte de ce qu'elle fait, dans
   // un endroit qui survit à un rechargement de page : si iOS décharge
   // l'onglet pendant la photo, le journal le montre en toutes lettres.
+  // Le scanner tient déjà un relevé de ce qu'il fait, sous un nom que
+  // celui-ci avait repris : deux fonctions du même nom dans la même
+  // portée, et c'est la dernière déclarée qui l'emporte. Tout ce journal
+  // partait donc dans le relevé du scanner, et localStorage restait vide.
   var JOURNAL = "casier-journal-photo";
 
-  function noter(etape, detail) {
-    try {
-      var j = JSON.parse(localStorage.getItem(JOURNAL) || "[]");
-      j.push({ t: Date.now(), e: etape, d: detail == null ? "" : String(detail) });
-      localStorage.setItem(JOURNAL, JSON.stringify(j.slice(-40)));
-    } catch (e) {}
+  // Le journal vit d'abord en mémoire : si localStorage est indisponible,
+  // il reste lisible pour la page en cours — c'est-à-dire exactement la
+  // fenêtre qui nous intéresse, de la prise de vue à la publication.
+  var journal = [];
+  var journalConserve = true;
+  try { journal = JSON.parse(localStorage.getItem(JOURNAL) || "[]"); } catch (e) { journal = []; }
+
+  function tracer(etape, detail) {
+    journal.push({ t: Date.now(), e: etape, d: detail == null ? "" : String(detail) });
+    if (journal.length > 60) journal = journal.slice(-60);
+    try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); }
+    catch (e) { journalConserve = false; }
   }
 
   function journalTexte() {
-    var j;
-    try { j = JSON.parse(localStorage.getItem(JOURNAL) || "[]"); } catch (e) { j = []; }
-    if (!j.length) return "Rien pour l'instant.";
-    return j.map(function (x) {
+    if (!journal.length) return "Rien pour l'instant.";
+    var l = journal.map(function (x) {
       var d = new Date(x.t);
       return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) +
              ":" + ("0" + d.getSeconds()).slice(-2) + "  " + x.e + (x.d ? " — " + x.d : "");
-    }).join("\n");
+    });
+    if (!journalConserve) l.push("(journal non conservé : il repart à zéro à chaque lancement)");
+    return l.join("\n");
   }
 
   // Une promesse qui ne se dénoue jamais est indiscernable d'une promesse
@@ -1245,12 +1255,12 @@ label .opt{font-weight:400;color:var(--faint)}
   function preparerImages(fichier) {
     return versBitmap(fichier).then(function (src) {
       var d = dimensions(src);
-      noter("décodée", d.l + "×" + d.h);
+      tracer("décodée", d.l + "×" + d.h);
       return reduire(src, PLEINE_PX, PLEINE_Q).then(function (pleine) {
-        noter("photo réduite", Math.round(pleine.size / 1024) + " ko");
+        tracer("photo réduite", Math.round(pleine.size / 1024) + " ko");
         return recadrer(src, VIGNETTE_L, VIGNETTE_H, VIGNETTE_Q).then(function (mini) {
           if (src.close) src.close();
-          noter("vignette", Math.round(mini.size / 1024) + " ko");
+          tracer("vignette", Math.round(mini.size / 1024) + " ko");
           return { pleine: pleine, mini: mini };
         });
       });
@@ -1262,7 +1272,11 @@ label .opt{font-weight:400;color:var(--faint)}
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
 
-  function envoyer(chemin, blob) {
+  // Ne pas s'appeler « envoyer » : une autre fonction de ce nom envoie les
+  // messages de discussion, et la dernière déclarée écrasait celle-ci.
+  // Le dépôt appelait donc la messagerie pour téléverser une photo — qui
+  // retournait sans rien faire, sans erreur, et l'annonce partait muette.
+  function envoyerFichier(chemin, blob) {
     return state.sb.storage.from("photos")
       .upload(chemin, blob, { contentType: "image/jpeg", upsert: false })
       .then(function (r) { if (r.error) throw r.error; return chemin; });
@@ -1271,9 +1285,14 @@ label .opt{font-weight:400;color:var(--faint)}
   function televerser(images) {
     var base = state.moiId + "/" + identifiant();
     return Promise.all([
-      envoyer(base + ".jpg", images.pleine),
-      envoyer(base + "_min.jpg", images.mini)
-    ]).then(function (c) { return { photo: c[0], photo_min: c[1] }; });
+      envoyerFichier(base + ".jpg", images.pleine),
+      envoyerFichier(base + "_min.jpg", images.mini)
+    ]).then(function (c) {
+      // Un téléversement qui ne rend pas de chemin n'a rien téléversé :
+      // le laisser passer, c'est publier une annonce muette en silence.
+      if (!c[0] || !c[1]) throw new Error("le stockage n'a rien retourné");
+      return { photo: c[0], photo_min: c[1] };
+    });
   }
 
   function rpc(nom, params) {
@@ -1874,7 +1893,7 @@ label .opt{font-weight:400;color:var(--faint)}
       }
       return charger();
     }).then(function () {
-      noter("annonce publiée", o.photo ? "avec photo" : "SANS photo");
+      tracer("annonce publiée", o.photo ? "avec photo" : "SANS photo");
       var muette = o.photo ? "" : " Sans photo.";
       if (o.mode === "troc")     toast("Annonce publiée. +1 crédit." + muette);
       else if (o.mode === "don") toast("Don publié. Merci — ça fait vivre le service." + muette);
@@ -3391,10 +3410,10 @@ label .opt{font-weight:400;color:var(--faint)}
 
   function onPhotoChoisie(ev) {
     var f = ev.target.files && ev.target.files[0];
-    if (!f) { noter("retour sans fichier"); return; }
-    noter("fichier reçu", (f.type || "type inconnu") + ", " + Math.round(f.size / 1024) + " ko");
+    if (!f) { tracer("retour sans fichier"); return; }
+    tracer("fichier reçu", (f.type || "type inconnu") + ", " + Math.round(f.size / 1024) + " ko");
     if (!/^image\//.test(f.type)) {
-      noter("refusé", "ce n'est pas une image");
+      tracer("refusé", "ce n'est pas une image");
       toast("Ce fichier n'est pas une image."); return;
     }
 
@@ -3405,13 +3424,13 @@ label .opt{font-weight:400;color:var(--faint)}
     avecDelai(preparerImages(f), 25000, "compression").then(function (images) {
       state.photo = images;
       rangerPhoto(images);
-      noter("photo prête");
+      tracer("photo prête");
       render();
       toast("Photo prête : " + Math.round(f.size / 1024) + " ko réduits à " +
             Math.round(images.mini.size / 1024) + " ko pour le catalogue.");
     }).catch(function (e) {
       state.photo = null;
-      noter("échec", (e && e.message) || "raison inconnue");
+      tracer("échec", (e && e.message) || "raison inconnue");
       render();
       // Dire laquelle des étapes a lâché vaut mieux qu'un « réessayez »
       // qui laisse recommencer la même manœuvre à l'identique.
@@ -3573,14 +3592,14 @@ label .opt{font-weight:400;color:var(--faint)}
     }
 
     toast("Envoi de la photo…");
-    noter("envoi vers le serveur");
+    tracer("envoi vers le serveur");
     televerser(state.photo).then(function (chemins) {
-      noter("photo envoyée", chemins.photo);
+      tracer("photo envoyée", chemins.photo);
       champs.photo = chemins.photo;
       champs.photoMin = chemins.photo_min;
       deposer(champs);
     }).catch(function (e) {
-      noter("envoi échoué", (e && e.message) || "raison inconnue");
+      tracer("envoi échoué", (e && e.message) || "raison inconnue");
       toast("La photo n'a pas pu être envoyée. Réessayez, ou publiez sans photo.");
     });
   }
@@ -4601,14 +4620,16 @@ label .opt{font-weight:400;color:var(--faint)}
     if (ph) {
       retenirBrouillon();
       if (ph.getAttribute("data-photo") === "oublier") {
+        if (!window.confirm("Effacer le journal ? Il sert à comprendre les photos manquantes.")) return;
+        journal = [];
         try { localStorage.removeItem(JOURNAL); } catch (e) {}
         render(); return;
       }
       if (ph.getAttribute("data-photo") === "retirer") {
-        state.photo = null; viderCoffre(); noter("photo retirée"); render();
+        state.photo = null; viderCoffre(); tracer("photo retirée"); render();
       } else {
         var i = document.getElementById("d-photo");
-        noter("ouverture appareil photo");
+        tracer("ouverture appareil photo");
         if (i) i.click();
       }
       return;
@@ -4698,7 +4719,7 @@ label .opt{font-weight:400;color:var(--faint)}
     // Cette ligne est la plus importante du journal : si elle apparaît
     // entre « ouverture appareil photo » et « fichier reçu », c'est iOS
     // qui a déchargé la page pendant la prise de vue.
-    noter("démarrage de l'application", VERSION_APP);
+    tracer("démarrage de l'application", VERSION_APP);
     if (typeof supabase === "undefined" || !supabase.createClient) {
       replier("bibliothèque cliente non chargée");
       return;
