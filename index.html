@@ -396,10 +396,6 @@ label .opt{font-weight:400;color:var(--faint)}
   border:1px solid var(--line);
 }
 .photo-apercu img{display:block;width:100%;height:auto}
-.journal{margin-top:10px;font-size:12px;color:var(--faint)}
-.journal summary{cursor:pointer;padding:4px 0}
-.journal pre{white-space:pre-wrap;word-break:break-word;font-size:11px;line-height:1.5;
-  background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0;max-height:260px;overflow:auto}
 .obj-head{display:flex;gap:8px;align-items:flex-start}
 .obj h3{
   margin:0;font-family:"Public Sans",sans-serif;
@@ -893,7 +889,7 @@ label .opt{font-weight:400;color:var(--faint)}
   // secrets de la fonction serveur.
   var CLE_PUSH = "BPct_TKB40uTbAGg0UzNCCMcbk60LYQaGHmH0XqXWcTR_Lo7qj2U6wm37kCgpWWynKLWarLx3lWfhRR40eizzkM";
 
-  var VERSION_APP = "2026.09.12-6";   // affiché en bas : permet de savoir ce que tourne un téléphone
+  var VERSION_APP = "2026.09.12-7";   // affiché en bas : permet de savoir ce que tourne un téléphone
   var PLAFOND_PRIX  = 40;   // € — fixé par la Maison des lycéens, pas par les élèves
   var PLANCHER_PRIX = 0.1;  // € — en dessous, mieux vaut donner ou troquer
   var PAS_PRIX      = 0.05; // € — les prix vont de cinq centimes en cinq centimes
@@ -1109,40 +1105,26 @@ label .opt{font-weight:400;color:var(--faint)}
     return viaImage(fichier);
   }
 
-  // Un iPhone n'a pas de console. Tant que la prise de vue échoue sans
-  // rien dire, on ne peut que supposer — et on a déjà supposé deux fois.
-  // L'application tient donc elle-même le compte de ce qu'elle fait, dans
-  // un endroit qui survit à un rechargement de page : si iOS décharge
-  // l'onglet pendant la photo, le journal le montre en toutes lettres.
-  // Le scanner tient déjà un relevé de ce qu'il fait, sous un nom que
-  // celui-ci avait repris : deux fonctions du même nom dans la même
-  // portée, et c'est la dernière déclarée qui l'emporte. Tout ce journal
-  // partait donc dans le relevé du scanner, et localStorage restait vide.
+  // Relevé du parcours d'une photo, de la prise de vue à la publication.
+  // Un iPhone n'a pas de console : sans cette trace, une photo qui se
+  // perd ne laisse rien à examiner, et on en est réduit à supposer.
+  //
+  // Il vit d'abord en mémoire, et n'est recopié dans le stockage local
+  // que pour survivre à un rechargement de page. Rien ne l'affiche : il
+  // ne coûte rien à tenir, et un écran de plus devant les élèves ne se
+  // justifie que le jour où quelque chose se perd à nouveau.
+  //
+  // Le nom compte. « noter » était déjà pris par le relevé du scanner,
+  // et la dernière déclaration l'emporte en silence : tout partait dans
+  // le mauvais relevé. Voir outils/verifier.py.
   var JOURNAL = "casier-journal-photo";
-
-  // Le journal vit d'abord en mémoire : si localStorage est indisponible,
-  // il reste lisible pour la page en cours — c'est-à-dire exactement la
-  // fenêtre qui nous intéresse, de la prise de vue à la publication.
   var journal = [];
-  var journalConserve = true;
   try { journal = JSON.parse(localStorage.getItem(JOURNAL) || "[]"); } catch (e) { journal = []; }
 
   function tracer(etape, detail) {
     journal.push({ t: Date.now(), e: etape, d: detail == null ? "" : String(detail) });
     if (journal.length > 60) journal = journal.slice(-60);
-    try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); }
-    catch (e) { journalConserve = false; }
-  }
-
-  function journalTexte() {
-    if (!journal.length) return "Rien pour l'instant.";
-    var l = journal.map(function (x) {
-      var d = new Date(x.t);
-      return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) +
-             ":" + ("0" + d.getSeconds()).slice(-2) + "  " + x.e + (x.d ? " — " + x.d : "");
-    });
-    if (!journalConserve) l.push("(journal non conservé : il repart à zéro à chaque lancement)");
-    return l.join("\n");
+    try { localStorage.setItem(JOURNAL, JSON.stringify(journal)); } catch (e) {}
   }
 
   // Une promesse qui ne se dénoue jamais est indiscernable d'une promesse
@@ -2768,10 +2750,6 @@ label .opt{font-weight:400;color:var(--faint)}
               "</span>" +
             "</div>" +
             '<div class="photo-apercu" id="photo-apercu"' + (state.photo ? "" : ' hidden') + "></div>" +
-            '<details class="journal"><summary>Diagnostic photo</summary>' +
-              "<pre>" + esc(journalTexte()) + "</pre>" +
-              '<button type="button" class="btn ghost" data-photo="oublier">Effacer le journal</button>' +
-            "</details>" +
           "</div>" +
         "</div>" +
         '<div class="form-foot">' +
@@ -4619,12 +4597,6 @@ label .opt{font-weight:400;color:var(--faint)}
     var ph = ev.target.closest("[data-photo]");
     if (ph) {
       retenirBrouillon();
-      if (ph.getAttribute("data-photo") === "oublier") {
-        if (!window.confirm("Effacer le journal ? Il sert à comprendre les photos manquantes.")) return;
-        journal = [];
-        try { localStorage.removeItem(JOURNAL); } catch (e) {}
-        render(); return;
-      }
       if (ph.getAttribute("data-photo") === "retirer") {
         state.photo = null; viderCoffre(); tracer("photo retirée"); render();
       } else {
